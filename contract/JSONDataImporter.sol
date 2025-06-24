@@ -55,6 +55,16 @@ contract JSONDataImporter {
     mapping(address => ImportStats) public importerStats;
     mapping(string => bool) public importedTokens; // Track to prevent duplicates
     
+    // Import data structure
+    struct ImportData {
+        string tokenURI;
+        address to;
+        address creator;
+        bool isSBT;
+        string originalTokenInfo;
+        uint16 royaltyRate;
+    }
+    
     modifier onlyOwner() {
         require(msg.sender == owner, "Owner only");
         _;
@@ -162,15 +172,6 @@ contract JSONDataImporter {
         return newTokenIds;
     }
     
-    struct ImportData {
-        string tokenURI;
-        address to;
-        address creator;
-        bool isSBT;
-        string originalTokenInfo;
-        uint16 royaltyRate;
-    }
-    
     /**
      * @dev Check if a token with the same original info already exists
      */
@@ -221,7 +222,7 @@ contract JSONDataImporter {
         string memory tokenURI,
         address to,
         address creator,
-        bool isSBT,
+        bool /* isSBT */,
         string memory originalTokenInfo,
         uint16 royaltyRate
     ) external view returns (bool isValid, string memory reason) {
