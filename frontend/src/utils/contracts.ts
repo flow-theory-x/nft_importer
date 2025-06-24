@@ -109,6 +109,30 @@ export interface NFTMetadata {
   }>
 }
 
+export const getTokenURI = async (
+  contractAddress: string,
+  tokenId: number,
+  chainConfig: ChainConfig
+): Promise<string> => {
+  if (!validateContractAddress(contractAddress)) {
+    throw new Error('Invalid contract address')
+  }
+
+  const provider = getProvider(chainConfig)
+  const abi = ['function tokenURI(uint256) view returns (string)']
+  
+  try {
+    const contract = new ethers.Contract(contractAddress, abi, provider)
+    const tokenURI = await contract.tokenURI(tokenId)
+    return tokenURI
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to get token URI: ${error.message}`)
+    }
+    throw new Error('Failed to get token URI: Unknown error')
+  }
+}
+
 export const getNFTMetadata = async (
   contractAddress: string,
   tokenId: number,
@@ -174,7 +198,7 @@ export const getNFTMetadataBatch = async (
   contractAddress: string,
   tokenIds: number[],
   chainConfig: ChainConfig
-): Promise<Array<{ tokenId: number; metadata: NFTMetadata | null; error?: string }>> => {
+): Promise<Array<{ tokenId: number; metadata: NFTMetadata | null; tokenURI?: string; error?: string }>> => {
   if (!validateContractAddress(contractAddress)) {
     throw new Error('Invalid contract address')
   }
@@ -182,8 +206,13 @@ export const getNFTMetadataBatch = async (
   const results = await Promise.allSettled(
     tokenIds.map(async (tokenId) => {
       try {
+        const provider = getProvider(chainConfig)
+        const abi = ['function tokenURI(uint256) view returns (string)']
+        const contract = new ethers.Contract(contractAddress, abi, provider)
+        const tokenURI = await contract.tokenURI(tokenId)
+        
         const metadata = await getNFTMetadata(contractAddress, tokenId, chainConfig)
-        return { tokenId, metadata }
+        return { tokenId, metadata, tokenURI }
       } catch (error) {
         return { 
           tokenId, 

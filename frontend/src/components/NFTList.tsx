@@ -6,6 +6,7 @@ import { getNFTOwnershipInfo, isTBA, isSBT } from '../utils/contracts'
 interface NFTItem {
   tokenId: number
   metadata: NFTMetadata | null
+  tokenURI?: string
   ownershipInfo?: NFTOwnershipInfo | null
   error?: string
 }
@@ -26,6 +27,7 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
   const [sbtCache, setSbtCache] = useState<Map<number, boolean>>(new Map())
   const [exportedJson, setExportedJson] = useState<string | null>(null)
   const [allSBT, setAllSBT] = useState(false)
+  const [allDataLoaded, setAllDataLoaded] = useState(false)
 
   const handleImageError = (tokenId: number) => {
     setImageErrors(prev => new Set(prev).add(tokenId))
@@ -87,6 +89,7 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
     return ownershipCache.get(nft.tokenId) || null
   }
 
+
   // Fetch ownership info for NFTs that don't have it
   useEffect(() => {
     if (!contractAddress || !selectedChain) return
@@ -101,6 +104,43 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
     })
   }, [nfts, contractAddress, selectedChain, ownershipCache, loadingOwnership])
 
+  // Check if all data is loaded (ownership, TBA, SBT info)
+  useEffect(() => {
+    if (!contractAddress || !selectedChain || nfts.length === 0) {
+      setAllDataLoaded(false)
+      return
+    }
+
+    const nftsWithMetadata = nfts.filter(nft => nft.metadata)
+    if (nftsWithMetadata.length === 0) {
+      setAllDataLoaded(false)
+      return
+    }
+
+    // Check if all NFTs have ownership info
+    const allHaveOwnership = nftsWithMetadata.every(nft => 
+      nft.ownershipInfo || ownershipCache.has(nft.tokenId)
+    )
+
+    if (!allHaveOwnership) {
+      setAllDataLoaded(false)
+      return
+    }
+
+    // Check if all owners have TBA status checked
+    const allOwnersHaveTBAStatus = nftsWithMetadata.every(nft => {
+      const ownershipInfo = getOwnershipInfo(nft)
+      return !ownershipInfo?.owner || tbaCache.has(ownershipInfo.owner)
+    })
+
+    // Check if all NFTs have SBT status checked
+    const allHaveSBTStatus = nftsWithMetadata.every(nft => 
+      sbtCache.has(nft.tokenId)
+    )
+
+    setAllDataLoaded(allHaveOwnership && allOwnersHaveTBAStatus && allHaveSBTStatus)
+  }, [nfts, ownershipCache, tbaCache, sbtCache, contractAddress, selectedChain])
+
   const getPlaceholderImage = () => {
     return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgNTBMMTMwIDEwMEwxMDAgMTUwTDcwIDEwMEwxMDAgNTBaIiBmaWxsPSIjOUI5QkEwIi8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTcwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOUI5QkEwIiBmb250LXNpemU9IjEyIj5ObyBJbWFnZTwvdGV4dD4KPC9zdmc+Cg=='
   }
@@ -110,7 +150,7 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
       const ownershipInfo = getOwnershipInfo(nft)
       return {
         tokenId: nft.tokenId,
-        metadata: nft.metadata,
+        tokenURI: nft.tokenURI || null,
         owner: ownershipInfo?.owner || null,
         creator: ownershipInfo?.creator || null,
         isTBA: ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false,
@@ -173,12 +213,107 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
 
   return (
     <>
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2 className="subtitle" style={{ margin: 0 }}>NFT Collection ({nfts.length} items)</h2>
-          {nfts.length > 0 && (
+      {exportedJson && (
+        <div className="card" style={{ marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <h3 style={{ margin: 0 }}>Exported JSON Data</h3>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
+                <input
+                  type="checkbox"
+                  checked={allSBT}
+                  onChange={(e) => {
+                    setAllSBT(e.target.checked)
+                    // Re-generate JSON when checkbox changes
+                    if (exportedJson) {
+                      const newAllSBT = e.target.checked
+                      const exportData = nfts.map(nft => {
+                        const ownershipInfo = getOwnershipInfo(nft)
+                        return {
+                          tokenId: nft.tokenId,
+                          tokenURI: nft.tokenURI || null,
+                          owner: ownershipInfo?.owner || null,
+                          creator: ownershipInfo?.creator || null,
+                          isTBA: ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false,
+                          isSBT: newAllSBT ? true : (sbtCache.get(nft.tokenId) || false),
+                          contractAddress: contractAddress,
+                          chainId: selectedChain?.chainId,
+                          originalTokenInfo: `${contractAddress}/${nft.tokenId}`,
+                          error: nft.error
+                        }
+                      })
+                      const jsonString = JSON.stringify(exportData, null, 2)
+                      setExportedJson(jsonString)
+                    }
+                  }}
+                />
+                all SBT
+              </label>
+            </div>
             <button
-              onClick={handleExportJson}
+              onClick={() => setExportedJson(null)}
+              style={{
+                backgroundColor: '#6c757d',
+                color: 'white',
+                border: 'none',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '0.8rem'
+              }}
+            >
+              Close
+            </button>
+          </div>
+          <div style={{
+            backgroundColor: '#f8f9fa',
+            border: '1px solid #e9ecef',
+            borderRadius: '6px',
+            padding: '1rem',
+            maxHeight: '400px',
+            overflow: 'auto'
+          }}>
+            <pre style={{
+              margin: 0,
+              fontSize: '0.8rem',
+              lineHeight: '1.4',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word'
+            }}>
+              {exportedJson}
+            </pre>
+          </div>
+          <div style={{ marginTop: '1rem', textAlign: 'right' }}>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(exportedJson)
+                alert('JSON copied to clipboard!')
+              }}
+              style={{
+                backgroundColor: '#007bff',
+                color: 'white',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                marginRight: '0.5rem'
+              }}
+            >
+              Copy to Clipboard
+            </button>
+            <button
+              onClick={() => {
+                const blob = new Blob([exportedJson], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `nft-collection-${contractAddress}-${Date.now()}.json`
+                document.body.appendChild(a)
+                a.click()
+                document.body.removeChild(a)
+                URL.revokeObjectURL(url)
+              }}
               style={{
                 backgroundColor: '#28a745',
                 color: 'white',
@@ -186,17 +321,45 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
                 padding: '0.5rem 1rem',
                 borderRadius: '6px',
                 cursor: 'pointer',
-                fontSize: '0.9rem',
-                fontWeight: '600'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#218838'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#28a745'
+                fontSize: '0.9rem'
               }}
             >
-              Export JSON
+              Download JSON
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2 className="subtitle" style={{ margin: 0 }}>NFT Collection ({nfts.length} items)</h2>
+          {nfts.length > 0 && (
+            <button
+              onClick={handleExportJson}
+              disabled={!allDataLoaded}
+              style={{
+                backgroundColor: allDataLoaded ? '#28a745' : '#6c757d',
+                color: 'white',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                borderRadius: '6px',
+                cursor: allDataLoaded ? 'pointer' : 'not-allowed',
+                fontSize: '0.9rem',
+                fontWeight: '600',
+                opacity: allDataLoaded ? 1 : 0.6
+              }}
+              onMouseEnter={(e) => {
+                if (allDataLoaded) {
+                  e.currentTarget.style.backgroundColor = '#218838'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (allDataLoaded) {
+                  e.currentTarget.style.backgroundColor = '#28a745'
+                }
+              }}
+            >
+              {allDataLoaded ? 'Export JSON' : 'Loading data...'}
             </button>
           )}
         </div>
@@ -391,123 +554,6 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
         `
       }} />
       </div>
-
-      {exportedJson && (
-        <div className="card" style={{ marginTop: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <h3 style={{ margin: 0 }}>Exported JSON Data</h3>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
-                <input
-                  type="checkbox"
-                  checked={allSBT}
-                  onChange={(e) => {
-                    setAllSBT(e.target.checked)
-                    // Re-generate JSON when checkbox changes
-                    if (exportedJson) {
-                      const newAllSBT = e.target.checked
-                      const exportData = nfts.map(nft => {
-                        const ownershipInfo = getOwnershipInfo(nft)
-                        return {
-                          tokenId: nft.tokenId,
-                          metadata: nft.metadata,
-                          owner: ownershipInfo?.owner || null,
-                          creator: ownershipInfo?.creator || null,
-                          isTBA: ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false,
-                          isSBT: newAllSBT ? true : (sbtCache.get(nft.tokenId) || false),
-                          contractAddress: contractAddress,
-                          chainId: selectedChain?.chainId,
-                          originalTokenInfo: `${contractAddress}/${nft.tokenId}`,
-                          error: nft.error
-                        }
-                      })
-                      const jsonString = JSON.stringify(exportData, null, 2)
-                      setExportedJson(jsonString)
-                    }
-                  }}
-                />
-                all SBT
-              </label>
-            </div>
-            <button
-              onClick={() => setExportedJson(null)}
-              style={{
-                backgroundColor: '#6c757d',
-                color: 'white',
-                border: 'none',
-                padding: '0.25rem 0.5rem',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '0.8rem'
-              }}
-            >
-              Close
-            </button>
-          </div>
-          <div style={{
-            backgroundColor: '#f8f9fa',
-            border: '1px solid #e9ecef',
-            borderRadius: '6px',
-            padding: '1rem',
-            maxHeight: '400px',
-            overflow: 'auto'
-          }}>
-            <pre style={{
-              margin: 0,
-              fontSize: '0.8rem',
-              lineHeight: '1.4',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word'
-            }}>
-              {exportedJson}
-            </pre>
-          </div>
-          <div style={{ marginTop: '1rem', textAlign: 'right' }}>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(exportedJson)
-                alert('JSON copied to clipboard!')
-              }}
-              style={{
-                backgroundColor: '#007bff',
-                color: 'white',
-                border: 'none',
-                padding: '0.5rem 1rem',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                marginRight: '0.5rem'
-              }}
-            >
-              Copy to Clipboard
-            </button>
-            <button
-              onClick={() => {
-                const blob = new Blob([exportedJson], { type: 'application/json' })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = `nft-collection-${contractAddress}-${Date.now()}.json`
-                document.body.appendChild(a)
-                a.click()
-                document.body.removeChild(a)
-                URL.revokeObjectURL(url)
-              }}
-              style={{
-                backgroundColor: '#28a745',
-                color: 'white',
-                border: 'none',
-                padding: '0.5rem 1rem',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '0.9rem'
-              }}
-            >
-              Download JSON
-            </button>
-          </div>
-        </div>
-      )}
     </>
   )
 }
