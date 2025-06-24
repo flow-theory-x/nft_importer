@@ -7,6 +7,7 @@ import ChainSelector from './components/ChainSelector'
 import NFTDisplay from './components/NFTDisplay'
 import NFTList from './components/NFTList'
 import ImportedNFTList from './components/ImportedNFTList'
+import ImportToBlockchain from './components/ImportToBlockchain'
 
 function App() {
   const [activeTab, setActiveTab] = useState<'export' | 'import'>('export')
@@ -70,6 +71,7 @@ function App() {
   const [importError, setImportError] = useState('')
   const [importedNFTs, setImportedNFTs] = useState<any[]>([])
   const [importedContractInfo, setImportedContractInfo] = useState<{ address: string; chainId: number } | null>(null)
+  const [importResults, setImportResults] = useState<any[]>([])
 
   // Wallet connection states
   const [walletConnected, setWalletConnected] = useState(false)
@@ -643,10 +645,18 @@ function App() {
       {activeTab === 'import' && (
         <>
           {importStatus === 'success' && importedNFTs.length > 0 && (
-            <ImportedNFTList 
-              nfts={importedNFTs} 
-              contractInfo={importedContractInfo}
-            />
+            <>
+              <ImportToBlockchain
+                importedNFTs={importedNFTs}
+                selectedChain={selectedChain}
+                onImportComplete={(results) => setImportResults(results)}
+              />
+              
+              <ImportedNFTList 
+                nfts={importedNFTs} 
+                contractInfo={importedContractInfo}
+              />
+            </>
           )}
 
           <div className="card" style={{ marginTop: importStatus === 'success' && importedNFTs.length > 0 ? '1rem' : '0' }}>

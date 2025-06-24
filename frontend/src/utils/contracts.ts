@@ -400,6 +400,113 @@ export const isEOA = async (
   }
 }
 
+// JSONDataImporter contract utilities
+export const JSON_DATA_IMPORTER_ABI = [
+  'function importSingleToken(address targetNFT, string memory tokenURI, address to, address creator, bool isSBT, string memory originalTokenInfo, uint16 royaltyRate) external payable returns (uint256)',
+  'function importBatch(address targetNFT, tuple(string tokenURI, address to, address creator, bool isSBT, string originalTokenInfo, uint16 royaltyRate)[] memory imports) external payable returns (uint256[])',
+  'function validateImportData(address targetNFT, string memory tokenURI, address to, address creator, bool isSBT, string memory originalTokenInfo, uint16 royaltyRate) external view returns (bool isValid, string memory reason)',
+  'function isTokenImported(string memory originalTokenInfo) external view returns (bool)',
+  'function getImportStats(address importer) external view returns (tuple(uint256 totalImported, uint256 totalFailed, uint256 lastImportTime))',
+  'event JSONDataImported(address indexed importer, address indexed targetNFT, uint256 indexed newTokenId, string originalTokenInfo)',
+  'event BatchImportStarted(address indexed importer, address indexed targetNFT, uint256 batchSize)',
+  'event BatchImportCompleted(address indexed importer, address indexed targetNFT, uint256 successCount, uint256 failureCount)',
+  'event ImportFailed(address indexed importer, string originalTokenInfo, string reason)'
+]
+
+export interface ImportData {
+  tokenURI: string
+  to: string
+  creator: string
+  isSBT: boolean
+  originalTokenInfo: string
+  royaltyRate: number
+}
+
+export const validateImportData = async (
+  importerContractAddress: string,
+  targetNFT: string,
+  tokenURI: string,
+  to: string,
+  creator: string,
+  isSBT: boolean,
+  originalTokenInfo: string,
+  royaltyRate: number,
+  chainConfig: ChainConfig
+): Promise<{ isValid: boolean; reason: string }> => {
+  try {
+    const provider = getProvider(chainConfig)
+    const contract = new ethers.Contract(importerContractAddress, JSON_DATA_IMPORTER_ABI, provider)
+    
+    const result = await contract.validateImportData(
+      targetNFT,
+      tokenURI,
+      to,
+      creator,
+      isSBT,
+      originalTokenInfo,
+      royaltyRate
+    )
+    
+    return {
+      isValid: result[0],
+      reason: result[1]
+    }
+  } catch (error) {
+    return {
+      isValid: false,
+      reason: error instanceof Error ? error.message : 'Validation failed'
+    }
+  }
+}
+
+export const isTokenAlreadyImported = async (
+  importerContractAddress: string,
+  originalTokenInfo: string,
+  chainConfig: ChainConfig
+): Promise<boolean> => {
+  try {
+    const provider = getProvider(chainConfig)
+    const contract = new ethers.Contract(importerContractAddress, JSON_DATA_IMPORTER_ABI, provider)
+    
+    return await contract.isTokenImported(originalTokenInfo)
+  } catch (error) {
+    console.warn('Failed to check if token is already imported:', error)
+    return false
+  }
+}
+
+export interface ImportStats {
+  totalImported: number
+  totalFailed: number
+  lastImportTime: number
+}
+
+export const getImportStats = async (
+  importerContractAddress: string,
+  importerAddress: string,
+  chainConfig: ChainConfig
+): Promise<ImportStats> => {
+  try {
+    const provider = getProvider(chainConfig)
+    const contract = new ethers.Contract(importerContractAddress, JSON_DATA_IMPORTER_ABI, provider)
+    
+    const stats = await contract.getImportStats(importerAddress)
+    
+    return {
+      totalImported: parseInt(stats[0].toString()),
+      totalFailed: parseInt(stats[1].toString()),
+      lastImportTime: parseInt(stats[2].toString())
+    }
+  } catch (error) {
+    console.warn('Failed to get import stats:', error)
+    return {
+      totalImported: 0,
+      totalFailed: 0,
+      lastImportTime: 0
+    }
+  }
+}
+
 export interface NFTOwnershipInfo {
   owner: string
   creator: string | null
