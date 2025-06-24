@@ -29,5 +29,11 @@ export const PRESET_CHAINS: ChainConfig[] = [
     name: 'Optimism',
     rpcUrl: 'https://mainnet.optimism.io',
     nativeCurrency: 'ETH'
+  },
+  {
+    chainId: 21201,
+    name: 'Private Chain',
+    rpcUrl: 'https://bc.bon-soleil.com:8080',
+    nativeCurrency: 'PRIV'
   }
 ]
