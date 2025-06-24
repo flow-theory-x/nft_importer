@@ -27,7 +27,6 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
   const [sbtCache, setSbtCache] = useState<Map<number, boolean>>(new Map())
   const [exportedJson, setExportedJson] = useState<string | null>(null)
   const [allSBT, setAllSBT] = useState(false)
-  const [allDataLoaded, setAllDataLoaded] = useState(false)
 
   const handleImageError = (tokenId: number) => {
     setImageErrors(prev => new Set(prev).add(tokenId))
@@ -104,42 +103,6 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
     })
   }, [nfts, contractAddress, selectedChain, ownershipCache, loadingOwnership])
 
-  // Check if all data is loaded (ownership, TBA, SBT info)
-  useEffect(() => {
-    if (!contractAddress || !selectedChain || nfts.length === 0) {
-      setAllDataLoaded(false)
-      return
-    }
-
-    const nftsWithMetadata = nfts.filter(nft => nft.metadata)
-    if (nftsWithMetadata.length === 0) {
-      setAllDataLoaded(false)
-      return
-    }
-
-    // Check if all NFTs have ownership info
-    const allHaveOwnership = nftsWithMetadata.every(nft => 
-      nft.ownershipInfo || ownershipCache.has(nft.tokenId)
-    )
-
-    if (!allHaveOwnership) {
-      setAllDataLoaded(false)
-      return
-    }
-
-    // Check if all owners have TBA status checked
-    const allOwnersHaveTBAStatus = nftsWithMetadata.every(nft => {
-      const ownershipInfo = getOwnershipInfo(nft)
-      return !ownershipInfo?.owner || tbaCache.has(ownershipInfo.owner)
-    })
-
-    // Check if all NFTs have SBT status checked
-    const allHaveSBTStatus = nftsWithMetadata.every(nft => 
-      sbtCache.has(nft.tokenId)
-    )
-
-    setAllDataLoaded(allHaveOwnership && allOwnersHaveTBAStatus && allHaveSBTStatus)
-  }, [nfts, ownershipCache, tbaCache, sbtCache, contractAddress, selectedChain])
 
   const getPlaceholderImage = () => {
     return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgNTBMMTMwIDEwMEwxMDAgMTUwTDcwIDEwMEwxMDAgNTBaIiBmaWxsPSIjOUI5QkEwIi8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTcwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOUI5QkEwIiBmb250LXNpemU9IjEyIj5ObyBJbWFnZTwvdGV4dD4KPC9zdmc+Cg=='
@@ -336,30 +299,24 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
           {nfts.length > 0 && (
             <button
               onClick={handleExportJson}
-              disabled={!allDataLoaded}
               style={{
-                backgroundColor: allDataLoaded ? '#28a745' : '#6c757d',
+                backgroundColor: '#28a745',
                 color: 'white',
                 border: 'none',
                 padding: '0.5rem 1rem',
                 borderRadius: '6px',
-                cursor: allDataLoaded ? 'pointer' : 'not-allowed',
+                cursor: 'pointer',
                 fontSize: '0.9rem',
-                fontWeight: '600',
-                opacity: allDataLoaded ? 1 : 0.6
+                fontWeight: '600'
               }}
               onMouseEnter={(e) => {
-                if (allDataLoaded) {
-                  e.currentTarget.style.backgroundColor = '#218838'
-                }
+                e.currentTarget.style.backgroundColor = '#218838'
               }}
               onMouseLeave={(e) => {
-                if (allDataLoaded) {
-                  e.currentTarget.style.backgroundColor = '#28a745'
-                }
+                e.currentTarget.style.backgroundColor = '#28a745'
               }}
             >
-              {allDataLoaded ? 'Export JSON' : 'Loading data...'}
+              Export JSON
             </button>
           )}
         </div>
