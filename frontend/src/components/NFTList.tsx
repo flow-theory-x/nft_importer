@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { NFTMetadata, NFTOwnershipInfo } from '../utils/contracts'
 import type { ChainConfig } from '../utils/chainConfigs'
-import { getNFTOwnershipInfo, isTBA, isSBT } from '../utils/contracts'
+import { getNFTOwnershipInfo, isTBA, isSBT, getTBASourceToken } from '../utils/contracts'
 
 interface NFTItem {
   tokenId: number
@@ -25,6 +25,7 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
   const [loadingOwnership, setLoadingOwnership] = useState<Set<number>>(new Set())
   const [tbaCache, setTbaCache] = useState<Map<string, boolean>>(new Map())
   const [sbtCache, setSbtCache] = useState<Map<number, boolean>>(new Map())
+  const [tbaSourceCache, setTbaSourceCache] = useState<Map<string, string | null>>(new Map())
   const [exportedJson, setExportedJson] = useState<string | null>(null)
   const [allSBT, setAllSBT] = useState(false)
 
@@ -52,9 +53,20 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
       
       if (ownershipInfo.owner && !tbaCache.has(ownershipInfo.owner)) {
         promises.push(
-          isTBA(ownershipInfo.owner, selectedChain).then(isOwnerTBA => 
+          isTBA(ownershipInfo.owner, selectedChain).then(async isOwnerTBA => {
             setTbaCache(prev => new Map(prev).set(ownershipInfo.owner, isOwnerTBA))
-          )
+            
+            // If owner is TBA, get source token info
+            if (isOwnerTBA && !tbaSourceCache.has(ownershipInfo.owner)) {
+              try {
+                const sourceToken = await getTBASourceToken(ownershipInfo.owner, selectedChain)
+                setTbaSourceCache(prev => new Map(prev).set(ownershipInfo.owner, sourceToken))
+              } catch (error) {
+                console.warn(`Failed to get TBA source token for ${ownershipInfo.owner}:`, error)
+                setTbaSourceCache(prev => new Map(prev).set(ownershipInfo.owner, null))
+              }
+            }
+          })
         )
       }
       
@@ -111,13 +123,17 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
   const handleExportJson = () => {
     const exportData = nfts.map(nft => {
       const ownershipInfo = getOwnershipInfo(nft)
+      const isOwnerTBA = ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false
+      const tbaSourceToken = isOwnerTBA && ownershipInfo?.owner ? tbaSourceCache.get(ownershipInfo.owner) || null : null
+      
       return {
         tokenId: nft.tokenId,
         tokenURI: nft.tokenURI || null,
         owner: ownershipInfo?.owner || null,
         creator: ownershipInfo?.creator || null,
-        isTBA: ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false,
+        isTBA: isOwnerTBA,
         isSBT: allSBT ? true : (sbtCache.get(nft.tokenId) || false),
+        tbaSourceToken: tbaSourceToken,
         contractAddress: contractAddress,
         chainId: selectedChain?.chainId,
         originalTokenInfo: `${contractAddress}/${nft.tokenId}`,
@@ -192,13 +208,17 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
                       const newAllSBT = e.target.checked
                       const exportData = nfts.map(nft => {
                         const ownershipInfo = getOwnershipInfo(nft)
+                        const isOwnerTBA = ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false
+                        const tbaSourceToken = isOwnerTBA && ownershipInfo?.owner ? tbaSourceCache.get(ownershipInfo.owner) || null : null
+                        
                         return {
                           tokenId: nft.tokenId,
                           tokenURI: nft.tokenURI || null,
                           owner: ownershipInfo?.owner || null,
                           creator: ownershipInfo?.creator || null,
-                          isTBA: ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false,
+                          isTBA: isOwnerTBA,
                           isSBT: newAllSBT ? true : (sbtCache.get(nft.tokenId) || false),
+                          tbaSourceToken: tbaSourceToken,
                           contractAddress: contractAddress,
                           chainId: selectedChain?.chainId,
                           originalTokenInfo: `${contractAddress}/${nft.tokenId}`,
@@ -438,6 +458,11 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
                           </div>
                           {ownershipInfo.creator && (
                             <div>Creator: {formatAddress(ownershipInfo.creator)}</div>
+                          )}
+                          {ownerIsTBA && tbaSourceCache.get(ownershipInfo.owner) && (
+                            <div style={{ color: '#17a2b8', fontSize: '0.7rem' }}>
+                              TBA Source: {formatAddress(tbaSourceCache.get(ownershipInfo.owner)!.split('/')[0])}/#{tbaSourceCache.get(ownershipInfo.owner)!.split('/')[1]}
+                            </div>
                           )}
                         </div>
                       )

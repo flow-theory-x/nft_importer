@@ -507,6 +507,35 @@ export const getImportStats = async (
   }
 }
 
+// Get TBA source token information (which NFT this TBA is bound to)
+export const getTBASourceToken = async (
+  tbaAddress: string,
+  chainConfig: ChainConfig
+): Promise<string | null> => {
+  try {
+    const provider = getProvider(chainConfig)
+    
+    // Try to call the token() function which returns (chainId, tokenContract, tokenId)
+    const tbaAbi = [
+      'function token() view returns (uint256, address, uint256)'
+    ]
+    
+    const contract = new ethers.Contract(tbaAddress, tbaAbi, provider)
+    const tokenInfo = await contract.token()
+    
+    if (tokenInfo && tokenInfo.length === 3) {
+      const [chainId, tokenContract, tokenId] = tokenInfo
+      // Return in format: contractAddress/tokenId
+      return `${tokenContract}/${tokenId.toString()}`
+    }
+    
+    return null
+  } catch (error) {
+    console.warn('Failed to get TBA source token:', error)
+    return null
+  }
+}
+
 export interface NFTOwnershipInfo {
   owner: string
   creator: string | null
