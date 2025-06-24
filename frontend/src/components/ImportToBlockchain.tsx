@@ -9,6 +9,7 @@ interface ImportedNFT {
   creator?: string | null
   isTBA: boolean
   isSBT: boolean
+  tbaSourceToken?: string | null
   contractAddress: string
   chainId: number
   originalTokenInfo: string
@@ -31,7 +32,9 @@ interface ImportResult {
 // JSONDataImporter contract ABI (essential functions only)
 const JSON_DATA_IMPORTER_ABI = [
   'function importSingleToken(address targetNFT, string memory tokenURI, address to, address creator, bool isSBT, string memory originalTokenInfo, uint16 royaltyRate) external payable returns (uint256)',
-  'function importBatch(address targetNFT, tuple(string tokenURI, address to, address creator, bool isSBT, string originalTokenInfo, uint16 royaltyRate)[] memory imports) external payable returns (uint256[])',
+  'function importSingleTokenWithTBA(address targetNFT, string memory tokenURI, address to, address creator, bool isSBT, string memory originalTokenInfo, uint16 royaltyRate, string memory tbaSourceToken, address registry, address implementation) external payable returns (uint256)',
+  'function importBatch(address targetNFT, tuple(string tokenURI, address to, address creator, bool isSBT, string originalTokenInfo, uint16 royaltyRate, string tbaSourceToken)[] memory imports) external payable returns (uint256[])',
+  'function importBatchWithTBA(address targetNFT, tuple(string tokenURI, address to, address creator, bool isSBT, string originalTokenInfo, uint16 royaltyRate, string tbaSourceToken)[] memory imports, address registry, address implementation) external payable returns (uint256[])',
   'function validateImportData(address targetNFT, string memory tokenURI, address to, address creator, bool isSBT, string memory originalTokenInfo, uint16 royaltyRate) external view returns (bool isValid, string memory reason)',
   'function isTokenImported(string memory originalTokenInfo) external view returns (bool)',
   'function getImportStats(address importer) external view returns (tuple(uint256 totalImported, uint256 totalFailed, uint256 lastImportTime))'
@@ -202,16 +205,19 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
       }
       
       if (selectedNFTsList.length === 1) {
-        // Single import gas estimation
+        // Single import gas estimation with TBA support
         const nft = selectedNFTsList[0]
-        const gasEstimate = await contract.importSingleToken.estimateGas(
+        const gasEstimate = await contract.importSingleTokenWithTBA.estimateGas(
           targetNFTContract,
           nft.tokenURI || '',
           nft.owner || currentAccount,
           nft.creator || currentAccount,
           nft.isSBT,
           nft.originalTokenInfo,
-          10 // 10% royalty rate
+          10, // 10% royalty rate
+          nft.tbaSourceToken || '', // TBA source token
+          tbaRegistry,
+          tbaImplementation
         )
         setGasEstimate(gasEstimate.toString())
       } else {
@@ -221,17 +227,18 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           // Don't return - allow user to try
         }
         
-        // Batch import gas estimation
+        // Batch import gas estimation with TBA support
         const importData = selectedNFTsList.map(nft => [
           nft.tokenURI || '',
           nft.owner || currentAccount,
           nft.creator || currentAccount,
           nft.isSBT || false,
           nft.originalTokenInfo,
-          10 // royaltyRate
+          10, // royaltyRate
+          nft.tbaSourceToken || '' // tbaSourceToken
         ])
         
-        const gasEstimate = await contract.importBatch.estimateGas(targetNFTContract, importData)
+        const gasEstimate = await contract.importBatchWithTBA.estimateGas(targetNFTContract, importData, tbaRegistry, tbaImplementation)
         setGasEstimate(gasEstimate.toString())
       }
     } catch (error: any) {
