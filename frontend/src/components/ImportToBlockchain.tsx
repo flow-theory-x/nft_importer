@@ -50,6 +50,8 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
   const [targetNFTContract, setTargetNFTContract] = useState('')
   const [walletConnected, setWalletConnected] = useState(false)
   const [currentAccount, setCurrentAccount] = useState<string>('')
+  const [authorizationStatus, setAuthorizationStatus] = useState<string>('')
+  const [customGasLimit, setCustomGasLimit] = useState<string>('')
 
   // Check wallet connection on mount
   useEffect(() => {
@@ -106,17 +108,96 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
     setSelectedNFTs(new Set())
   }
 
+  // Check authorization status
+  const checkAuthorization = async () => {
+    if (!importerContractAddress || !targetNFTContract) {
+      setAuthorizationStatus('Please enter both contract addresses')
+      return
+    }
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      
+      // Check if addresses are valid contracts
+      const importerCode = await provider.getCode(importerContractAddress)
+      const targetCode = await provider.getCode(targetNFTContract)
+      
+      if (importerCode === '0x') {
+        setAuthorizationStatus('Error: JSONDataImporter address is not a contract')
+        return
+      }
+      
+      if (targetCode === '0x') {
+        setAuthorizationStatus('Error: DonatableNFT address is not a contract')
+        return
+      }
+      
+      // Check authorization
+      const donatableNFTAbi = ['function _importers(address) view returns (bool)', 'function _owner() view returns (address)']
+      const donatableNFT = new ethers.Contract(targetNFTContract, donatableNFTAbi, provider)
+      
+      const [isAuthorized, contractOwner] = await Promise.all([
+        donatableNFT._importers(importerContractAddress).catch(() => false),
+        donatableNFT._owner().catch(() => null)
+      ])
+      
+      if (isAuthorized) {
+        setAuthorizationStatus('✅ JSONDataImporter is authorized')
+      } else {
+        setAuthorizationStatus(`❌ JSONDataImporter NOT authorized. Contract owner (${contractOwner ? contractOwner.slice(0, 6) + '...' + contractOwner.slice(-4) : 'unknown'}) must call: setImporter("${importerContractAddress}", true)`)
+      }
+    } catch (error) {
+      console.error('Authorization check failed:', error)
+      setAuthorizationStatus('Error checking authorization: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    }
+  }
+
   const estimateGas = async () => {
     if (!walletConnected || !importerContractAddress || !targetNFTContract || selectedNFTs.size === 0) {
       return
     }
 
     try {
+      // First, check if the JSONDataImporter is authorized
       const provider = new ethers.BrowserProvider(window.ethereum)
+      const donatableNFTAbi = ['function _importers(address) view returns (bool)']
+      const donatableNFT = new ethers.Contract(targetNFTContract, donatableNFTAbi, provider)
+      
+      try {
+        const isAuthorized = await donatableNFT._importers(importerContractAddress)
+        if (!isAuthorized) {
+          setGasEstimate('Error: JSONDataImporter not authorized. Please call setImporter() on DonatableNFT contract.')
+          return
+        }
+      } catch (authError) {
+        console.warn('Could not check authorization:', authError)
+      }
+      
       const signer = await provider.getSigner()
       const contract = new ethers.Contract(importerContractAddress, JSON_DATA_IMPORTER_ABI, signer)
 
       const selectedNFTsList = importedNFTs.filter(nft => selectedNFTs.has(nft.originalTokenInfo))
+      
+      // Debug log
+      console.log('Gas estimation debug:', {
+        importerContract: importerContractAddress,
+        targetNFT: targetNFTContract,
+        selectedCount: selectedNFTsList.length,
+        firstNFT: selectedNFTsList[0]
+      })
+      
+      // Additional validation check
+      if (selectedNFTsList.length > 0) {
+        const firstNFT = selectedNFTsList[0]
+        if (!firstNFT.tokenURI) {
+          setGasEstimate('Error: First NFT has no tokenURI')
+          return
+        }
+        if (!firstNFT.originalTokenInfo) {
+          setGasEstimate('Error: First NFT has no originalTokenInfo')
+          return
+        }
+      }
       
       if (selectedNFTsList.length === 1) {
         // Single import gas estimation
@@ -132,22 +213,56 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
         )
         setGasEstimate(gasEstimate.toString())
       } else {
+        // Check batch size limit (more permissive)
+        if (selectedNFTsList.length > 50) {
+          setGasEstimate(`Warning: Batch size (${selectedNFTsList.length}) is very large. Consider using smaller batches (≤50) if gas estimation fails.`)
+          // Don't return - allow user to try
+        }
+        
         // Batch import gas estimation
-        const importData = selectedNFTsList.map(nft => ({
-          tokenURI: nft.tokenURI || '',
-          to: nft.owner || currentAccount,
-          creator: nft.creator || currentAccount,
-          isSBT: nft.isSBT,
-          originalTokenInfo: nft.originalTokenInfo,
-          royaltyRate: 10
-        }))
+        const importData = selectedNFTsList.map(nft => [
+          nft.tokenURI || '',
+          nft.owner || currentAccount,
+          nft.creator || currentAccount,
+          nft.isSBT || false,
+          nft.originalTokenInfo,
+          10 // royaltyRate
+        ])
         
         const gasEstimate = await contract.importBatch.estimateGas(targetNFTContract, importData)
         setGasEstimate(gasEstimate.toString())
       }
-    } catch (error) {
-      console.error('Gas estimation failed:', error)
-      setGasEstimate('Estimation failed')
+    } catch (error: any) {
+      console.error('Gas estimation failed - Full error:', error)
+      console.error('Error details:', {
+        reason: error.reason,
+        code: error.code,
+        action: error.action,
+        data: error.data,
+        transaction: error.transaction
+      })
+      
+      // More detailed error handling
+      let errorMessage = 'Estimation failed'
+      
+      if (error.reason) {
+        errorMessage = error.reason
+      } else if (error.data && error.data.message) {
+        errorMessage = error.data.message
+      } else if (error.message) {
+        errorMessage = error.message
+        
+        // Check for specific error patterns
+        if (error.message.includes('missing revert data')) {
+          errorMessage = 'Transaction would fail. Possible causes:\n' +
+            '1. JSONDataImporter not authorized (call setImporter on DonatableNFT)\n' +
+            '2. Invalid contract addresses\n' +
+            '3. Token already imported\n' +
+            '4. Invalid token data'
+        }
+      }
+      
+      setGasEstimate(errorMessage)
     }
   }
 
@@ -171,6 +286,11 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
         // Single import
         const nft = selectedNFTsList[0]
         try {
+          const txOptions: any = {}
+          if (customGasLimit) {
+            txOptions.gasLimit = parseInt(customGasLimit)
+          }
+          
           const tx = await contract.importSingleToken(
             targetNFTContract,
             nft.tokenURI || '',
@@ -178,7 +298,8 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
             nft.creator || currentAccount,
             nft.isSBT,
             nft.originalTokenInfo,
-            10
+            10,
+            txOptions
           )
           
           const receipt = await tx.wait()
@@ -204,18 +325,39 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           })
         }
       } else {
+        // Block if exceeds contract limit
+        if (selectedNFTsList.length > 100) {
+          alert(`Batch size (${selectedNFTsList.length}) exceeds maximum limit of 100 NFTs. Please reduce your selection.`)
+          setIsImporting(false)
+          return
+        }
+        
+        // Warning for very large batches but don't block
+        if (selectedNFTsList.length > 50) {
+          const confirmed = confirm(`You're about to import ${selectedNFTsList.length} NFTs in one transaction. This may require high gas fees and could fail. Continue?`)
+          if (!confirmed) {
+            setIsImporting(false)
+            return
+          }
+        }
+        
         // Batch import
-        const importData = selectedNFTsList.map(nft => ({
-          tokenURI: nft.tokenURI || '',
-          to: nft.owner || currentAccount,
-          creator: nft.creator || currentAccount,
-          isSBT: nft.isSBT,
-          originalTokenInfo: nft.originalTokenInfo,
-          royaltyRate: 10
-        }))
+        const importData = selectedNFTsList.map(nft => [
+          nft.tokenURI || '',
+          nft.owner || currentAccount,
+          nft.creator || currentAccount,
+          nft.isSBT || false,
+          nft.originalTokenInfo,
+          10 // royaltyRate
+        ])
 
         try {
-          const tx = await contract.importBatch(targetNFTContract, importData)
+          const txOptions: any = {}
+          if (customGasLimit) {
+            txOptions.gasLimit = parseInt(customGasLimit)
+          }
+          
+          const tx = await contract.importBatch(targetNFTContract, importData, txOptions)
           const receipt = await tx.wait()
           
           // For batch imports, we'll mark all as successful
@@ -295,6 +437,36 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
             style={{ width: '100%', padding: '8px', marginTop: '5px' }}
           />
         </div>
+        
+        {/* Authorization Check Button */}
+        <button
+          onClick={checkAuthorization}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#17a2b8',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            marginTop: '10px'
+          }}
+        >
+          Check Authorization Status
+        </button>
+        
+        {authorizationStatus && (
+          <div style={{
+            marginTop: '10px',
+            padding: '10px',
+            backgroundColor: authorizationStatus.includes('✅') ? '#d4edda' : '#f8d7da',
+            border: `1px solid ${authorizationStatus.includes('✅') ? '#c3e6cb' : '#f5c6cb'}`,
+            borderRadius: '4px',
+            fontSize: '14px',
+            whiteSpace: 'pre-wrap'
+          }}>
+            {authorizationStatus}
+          </div>
+        )}
       </div>
 
       {/* NFT Selection */}
@@ -307,6 +479,16 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
             Deselect All
           </button>
           <span>Selected: {selectedNFTs.size} / {importedNFTs.length}</span>
+          {selectedNFTs.size > 50 && (
+            <span style={{ color: '#ffc107', marginLeft: '10px', fontWeight: 'bold' }}>
+              ⚠️ Large batch size ({selectedNFTs.size} NFTs) - may require high gas fees
+            </span>
+          )}
+          {selectedNFTs.size > 100 && (
+            <span style={{ color: '#dc3545', marginLeft: '10px', fontWeight: 'bold' }}>
+              ❌ Exceeds maximum batch size (100 NFTs). Please reduce selection.
+            </span>
+          )}
         </div>
 
         <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #ddd', padding: '10px' }}>
@@ -335,10 +517,39 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
       {/* Gas Estimation */}
       {walletConnected && importerContractAddress && targetNFTContract && selectedNFTs.size > 0 && (
         <div className="gas-estimation" style={{ marginBottom: '20px' }}>
-          <button onClick={estimateGas} style={{ padding: '8px 16px', marginRight: '10px' }}>
-            Estimate Gas
-          </button>
-          {gasEstimate && <span>Estimated Gas: {gasEstimate}</span>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <button onClick={estimateGas} style={{ padding: '8px 16px' }}>
+              Estimate Gas
+            </button>
+            <div>
+              <label>Custom Gas Limit (optional):</label>
+              <input
+                type="number"
+                value={customGasLimit}
+                onChange={(e) => setCustomGasLimit(e.target.value)}
+                placeholder="e.g., 5000000"
+                style={{ padding: '4px', marginLeft: '5px', width: '120px' }}
+              />
+            </div>
+          </div>
+          {gasEstimate && (
+            <div style={{ 
+              marginTop: '10px', 
+              padding: '10px', 
+              backgroundColor: gasEstimate.includes('Failed') || gasEstimate.includes('Error') ? '#fee' : '#efe',
+              border: `1px solid ${gasEstimate.includes('Failed') || gasEstimate.includes('Error') ? '#fcc' : '#cfc'}`,
+              borderRadius: '4px',
+              maxWidth: '100%',
+              wordWrap: 'break-word',
+              overflowWrap: 'break-word',
+              fontSize: '14px'
+            }}>
+              <strong>Estimated Gas:</strong>
+              <div style={{ whiteSpace: 'pre-wrap', marginTop: '5px' }}>
+                {gasEstimate}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

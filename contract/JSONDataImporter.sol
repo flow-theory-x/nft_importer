@@ -140,7 +140,7 @@ contract JSONDataImporter {
         ImportData[] memory imports
     ) external payable returns (uint256[] memory) {
         require(imports.length > 0, "No imports provided");
-        require(imports.length <= 50, "Batch size too large"); // Prevent gas limit issues
+        require(imports.length <= 100, "Batch size too large. Maximum 100 NFTs per batch"); // Increased limit
         
         emit BatchImportStarted(msg.sender, targetNFT, imports.length);
         
