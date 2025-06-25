@@ -6,7 +6,6 @@ import { PRESET_CHAINS } from './utils/chainConfigs'
 import ChainSelector from './components/ChainSelector'
 import NFTDisplay from './components/NFTDisplay'
 import NFTList from './components/NFTList'
-import ImportedNFTList from './components/ImportedNFTList'
 import ImportToBlockchain from './components/ImportToBlockchain'
 
 function App() {
@@ -685,11 +684,6 @@ function App() {
                 selectedChain={selectedChain}
                 walletChainId={walletChainId}
                 onImportComplete={(results) => setImportResults(results)}
-              />
-              
-              <ImportedNFTList 
-                nfts={importedNFTs} 
-                contractInfo={importedContractInfo}
               />
             </>
           )}

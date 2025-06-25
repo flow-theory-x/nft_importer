@@ -203,6 +203,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
   const [currentAccount, setCurrentAccount] = useState<string>('')
   const [authorizationStatus, setAuthorizationStatus] = useState<string>('')
   const [customGasLimit, setCustomGasLimit] = useState<string>('')
+  const [metadataCache, setMetadataCache] = useState<Map<string, { name?: string; image?: string }>>(new Map())
 
   // Check wallet connection on mount
   useEffect(() => {
@@ -220,6 +221,24 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
     }
   }, [walletChainId])
 
+  // Fetch metadata for all NFTs when they are imported
+  useEffect(() => {
+    const fetchAllMetadata = async () => {
+      const newCache = new Map(metadataCache)
+      
+      for (const nft of importedNFTs) {
+        if (nft.tokenURI && !newCache.has(nft.originalTokenInfo)) {
+          const metadata = await fetchMetadata(nft.tokenURI)
+          newCache.set(nft.originalTokenInfo, metadata)
+        }
+      }
+      
+      setMetadataCache(newCache)
+    }
+    
+    fetchAllMetadata()
+  }, [importedNFTs])
+
   const checkWalletConnection = async () => {
     if (typeof window.ethereum !== 'undefined') {
       try {
@@ -231,6 +250,36 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
       } catch (error) {
         console.error('Failed to check wallet connection:', error)
       }
+    }
+  }
+
+  // Fetch metadata from tokenURI
+  const fetchMetadata = async (tokenURI: string): Promise<{ name?: string; image?: string }> => {
+    if (!tokenURI) return {}
+    
+    try {
+      // Convert IPFS URL if needed
+      let metadataUrl = tokenURI
+      if (tokenURI.startsWith('ipfs://')) {
+        metadataUrl = tokenURI.replace('ipfs://', 'https://ipfs.io/ipfs/')
+      }
+      
+      const response = await fetch(metadataUrl)
+      const metadata = await response.json()
+      
+      // Convert IPFS image URL if needed
+      let imageUrl = metadata.image
+      if (imageUrl && imageUrl.startsWith('ipfs://')) {
+        imageUrl = imageUrl.replace('ipfs://', 'https://ipfs.io/ipfs/')
+      }
+      
+      return {
+        name: metadata.name,
+        image: imageUrl
+      }
+    } catch (error) {
+      console.error('Failed to fetch metadata:', error)
+      return {}
     }
   }
 
@@ -1286,7 +1335,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           )}
         </div>
 
-        <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #ddd', padding: '10px' }}>
+        <div style={{ border: '1px solid #ddd', padding: '10px' }}>
           {importedNFTs.map((nft, index) => {
             // Check if this NFT is already imported based on validation errors
             const isAlreadyImported = nft.isAlreadyImported || false
@@ -1308,25 +1357,67 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
                   disabled={isAlreadyImported}
                   style={{ marginRight: '10px' }}
                 />
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span><strong>Token:</strong> {nft.originalTokenInfo}</span>
-                    {isAlreadyImported && (
-                      <span style={{ 
-                        backgroundColor: '#28a745', 
-                        color: 'white', 
-                        padding: '2px 6px', 
-                        borderRadius: '3px', 
-                        fontSize: '11px',
-                        fontWeight: 'bold'
-                      }}>
-                        ✓ IMPORTED
-                      </span>
-                    )}
+                {/* NFT Image */}
+                {metadataCache.get(nft.originalTokenInfo)?.image && (
+                  <div style={{ marginRight: '12px' }}>
+                    <img
+                      src={metadataCache.get(nft.originalTokenInfo)?.image}
+                      alt={metadataCache.get(nft.originalTokenInfo)?.name || 'NFT'}
+                      style={{
+                        width: '60px',
+                        height: '60px',
+                        objectFit: 'cover',
+                        borderRadius: '4px',
+                        border: '1px solid #ddd'
+                      }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
                   </div>
-                  <div><strong>Owner:</strong> {nft.owner || 'Unknown'}</div>
-                  <div><strong>Creator:</strong> {nft.creator || 'Unknown'}</div>
+                )}
+                <div style={{ flex: 1 }}>
                   <div>
+                    {/* NFT Name */}
+                    {metadataCache.get(nft.originalTokenInfo)?.name && (
+                      <div style={{ 
+                        fontWeight: 'bold', 
+                        fontSize: '16px',
+                        color: '#333',
+                        marginBottom: '4px'
+                      }}>
+                        {metadataCache.get(nft.originalTokenInfo)?.name}
+                      </div>
+                    )}
+                    <div style={{ 
+                      color: '#666', 
+                      fontSize: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      {nft.originalTokenInfo}
+                      {isAlreadyImported && (
+                        <span style={{ 
+                          backgroundColor: '#28a745', 
+                          color: 'white', 
+                          padding: '2px 6px', 
+                          borderRadius: '3px', 
+                          fontSize: '11px',
+                          fontWeight: 'bold'
+                        }}>
+                          ✓ IMPORTED
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#666' }}>
+                    <strong>Owner:</strong> {nft.owner || 'Unknown'}
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#666' }}>
+                    <strong>Creator:</strong> {nft.creator || 'Unknown'}
+                  </div>
+                  <div style={{ marginTop: '4px' }}>
                     {nft.isSBT && <span style={{ backgroundColor: '#ff6b6b', color: 'white', padding: '2px 6px', borderRadius: '3px', fontSize: '12px', marginRight: '5px' }}>SBT</span>}
                     {nft.isTBA && <span style={{ backgroundColor: '#4ecdc4', color: 'white', padding: '2px 6px', borderRadius: '3px', fontSize: '12px' }}>TBA</span>}
                   </div>
