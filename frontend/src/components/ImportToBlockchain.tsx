@@ -483,8 +483,33 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
     }
 
     try {
-      // First, check if the JSONDataImporter is authorized
       const provider = new ethers.BrowserProvider(window.ethereum)
+      const contract = new ethers.Contract(importerContractAddress, JSON_DATA_IMPORTER_ABI, provider)
+      
+      // First, check import status for all NFTs
+      const updatedNFTs = await Promise.all(
+        nftsWithImportStatus.map(async (nft) => {
+          try {
+            const validation = await contractSigner.validateImportData(
+              targetNFTContract,
+              nft.tokenURI || '',
+              nft.owner || currentAccount,
+              nft.creator || currentAccount,
+              nft.isSBT,
+              nft.originalTokenInfo,
+              10
+            )
+            return { ...nft, isAlreadyImported: !validation[0] && validation[1].includes('already') }
+          } catch {
+            return { ...nft, isAlreadyImported: false }
+          }
+        })
+      )
+      
+      setNftsWithImportStatus(updatedNFTs)
+      console.log('Import status checked for all NFTs during gas estimation')
+      
+      // Check if the JSONDataImporter is authorized
       const donatableNFTAbi = ['function _importers(address) view returns (bool)']
       const donatableNFT = new ethers.Contract(targetNFTContract, donatableNFTAbi, provider)
       
@@ -499,9 +524,9 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
       }
       
       const signer = await provider.getSigner()
-      const contract = new ethers.Contract(importerContractAddress, JSON_DATA_IMPORTER_ABI, signer)
+      const contractSigner = new ethers.Contract(importerContractAddress, JSON_DATA_IMPORTER_ABI, signer)
 
-      const selectedNFTsList = importedNFTs.filter(nft => selectedNFTs.has(nft.originalTokenInfo))
+      const selectedNFTsList = updatedNFTs.filter(nft => selectedNFTs.has(nft.originalTokenInfo))
       
       // Debug log
       console.log('Gas estimation debug:', {
@@ -536,7 +561,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
         // Debug: Validate import data first
         console.log('Validating import data for:', nft.originalTokenInfo)
         try {
-          const validation = await contract.validateImportData(
+          const validation = await contractSigner.validateImportData(
             targetNFTContract,
             nft.tokenURI || '',
             nft.owner || currentAccount,
@@ -578,7 +603,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
               'function _originalTokenInfo(uint256) view returns (string)',
               'function ownerOf(uint256) view returns (address)'
             ]
-            const donatableNFT = new ethers.Contract(targetNFTContract, donatableNFTAbi, contract.runner)
+            const donatableNFT = new ethers.Contract(targetNFTContract, donatableNFTAbi, contractSigner.runner)
             
             const totalSupply = await donatableNFT.totalSupply()
             console.log('DonatableNFT total supply:', totalSupply.toString())
@@ -658,7 +683,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
         // Choose import method based on TBA source token (TBA re-enabled)
         if (!nft.tbaSourceToken) {
           console.log('Using simple import (no TBA source token)')
-          const gasEstimate = await contract.importSingleToken.estimateGas(
+          const gasEstimate = await contractSigner.importSingleToken.estimateGas(
             targetNFTContract,
             nft.tokenURI || '',
             nft.owner || currentAccount,
@@ -678,7 +703,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
             await testTBAComponents(sourceTokenId)
           }
           
-          const gasEstimate = await contract.importSingleTokenWithTBA.estimateGas(
+          const gasEstimate = await contractSigner.importSingleTokenWithTBA.estimateGas(
             targetNFTContract,
             nft.tokenURI || '',
             nft.owner || currentAccount,
@@ -696,7 +721,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
         /*
         // If no TBA source token, use simple import
         if (!nft.tbaSourceToken) {
-          const gasEstimate = await contract.importSingleToken.estimateGas(
+          const gasEstimate = await contractSigner.importSingleToken.estimateGas(
             targetNFTContract,
             nft.tokenURI || '',
             nft.owner || currentAccount,
@@ -708,7 +733,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           setGasEstimate(gasEstimate.toString())
         } else {
           // Use TBA version
-          const gasEstimate = await contract.importSingleTokenWithTBA.estimateGas(
+          const gasEstimate = await contractSigner.importSingleTokenWithTBA.estimateGas(
             targetNFTContract,
             nft.tokenURI || '',
             nft.owner || currentAccount,
@@ -757,7 +782,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
         for (let i = 0; i < selectedNFTsList.length; i++) {
           const nft = selectedNFTsList[i]
           try {
-            const validation = await contract.validateImportData(
+            const validation = await contractSigner.validateImportData(
               targetNFTContract,
               nft.tokenURI || '',
               nft.owner || currentAccount,
@@ -804,7 +829,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           ])
           
           // Try batch gas estimation
-          const batchGasEstimate = await contract.importBatchWithTBA.estimateGas(
+          const batchGasEstimate = await contractSigner.importBatchWithTBA.estimateGas(
             targetNFTContract, 
             importData,
             hasTBANFTs ? tbaRegistry : ethers.ZeroAddress,
@@ -1180,43 +1205,6 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
         }
         */
 
-  // Check import status for all NFTs on component mount
-  useEffect(() => {
-    const checkImportStatus = async () => {
-      if (!importerContractAddress || !targetNFTContract || importedNFTs.length === 0) return
-      
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum)
-        const contract = new ethers.Contract(importerContractAddress, JSON_DATA_IMPORTER_ABI, provider)
-        
-        const updatedNFTs = await Promise.all(
-          importedNFTs.map(async (nft) => {
-            try {
-              const validation = await contract.validateImportData(
-                targetNFTContract,
-                nft.tokenURI || '',
-                nft.owner || currentAccount,
-                nft.creator || currentAccount,
-                nft.isSBT,
-                nft.originalTokenInfo,
-                10
-              )
-              return { ...nft, isAlreadyImported: !validation[0] && validation[1].includes('already') }
-            } catch {
-              return { ...nft, isAlreadyImported: false }
-            }
-          })
-        )
-        
-        setNftsWithImportStatus(updatedNFTs)
-        console.log('Import status checked for all NFTs')
-      } catch (error) {
-        console.warn('Could not check import status:', error)
-      }
-    }
-    
-    checkImportStatus()
-  }, [importerContractAddress, targetNFTContract, importedNFTs.length, currentAccount])
 
   if (importedNFTs.length === 0) {
     return (
