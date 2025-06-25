@@ -14,6 +14,7 @@ interface ImportedNFT {
   contractAddress: string
   chainId: number
   originalTokenInfo: string
+  isAlreadyImported?: boolean
 }
 
 interface ImportToBlockchainProps {
@@ -204,6 +205,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
   const [authorizationStatus, setAuthorizationStatus] = useState<string>('')
   const [customGasLimit, setCustomGasLimit] = useState<string>('')
   const [metadataCache, setMetadataCache] = useState<Map<string, { name?: string; image?: string }>>(new Map())
+  const [nftsWithImportStatus, setNftsWithImportStatus] = useState<ImportedNFT[]>([])
 
   // Check wallet connection on mount
   useEffect(() => {
@@ -220,6 +222,11 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
       setTbaImplementation(defaults.tbaImplementation)
     }
   }, [walletChainId])
+
+  // Initialize NFTs with import status
+  useEffect(() => {
+    setNftsWithImportStatus(importedNFTs)
+  }, [importedNFTs])
 
   // Fetch metadata for all NFTs when they are imported
   useEffect(() => {
@@ -418,7 +425,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
   }
 
   const selectAll = () => {
-    const allTokenInfos = importedNFTs.map(nft => nft.originalTokenInfo)
+    const allTokenInfos = nftsWithImportStatus.filter(nft => !nft.isAlreadyImported).map(nft => nft.originalTokenInfo)
     setSelectedNFTs(new Set(allTokenInfos))
   }
 
@@ -1201,7 +1208,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           })
         )
         
-        // You could update parent component state here if needed
+        setNftsWithImportStatus(updatedNFTs)
         console.log('Import status checked for all NFTs')
       } catch (error) {
         console.warn('Could not check import status:', error)
@@ -1322,7 +1329,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           <button onClick={deselectAll} style={{ marginRight: '10px', padding: '5px 10px' }}>
             Deselect All
           </button>
-          <span>Selected: {selectedNFTs.size} / {importedNFTs.length}</span>
+          <span>Selected: {selectedNFTs.size} / {nftsWithImportStatus.length}</span>
           {selectedNFTs.size > 50 && (
             <span style={{ color: '#ffc107', marginLeft: '10px', fontWeight: 'bold' }}>
               ⚠️ Large batch size ({selectedNFTs.size} NFTs) - may require high gas fees
@@ -1336,7 +1343,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
         </div>
 
         <div style={{ border: '1px solid #ddd', padding: '10px' }}>
-          {importedNFTs.map((nft, index) => {
+          {nftsWithImportStatus.map((nft, index) => {
             // Check if this NFT is already imported based on validation errors
             const isAlreadyImported = nft.isAlreadyImported || false
             
@@ -1347,8 +1354,8 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
                 marginBottom: '8px', 
                 padding: '8px', 
                 border: '1px solid #eee',
-                backgroundColor: isAlreadyImported ? '#f8f9fa' : '#fff',
-                opacity: isAlreadyImported ? 0.7 : 1
+                backgroundColor: isAlreadyImported ? '#e9ecef' : '#fff',
+                opacity: isAlreadyImported ? 0.8 : 1
               }}>
                 <input
                   type="checkbox"
