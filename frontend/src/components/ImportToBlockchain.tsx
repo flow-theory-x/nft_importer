@@ -1120,18 +1120,36 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
             txOptions.gasLimit = parseInt(customGasLimit)
           }
           
-          // Use pre-estimated gas from UI if available, otherwise estimate with buffer
+          // Set gas limit if not custom
           if (!customGasLimit) {
             // Parse gas estimate from the UI if available
+            console.log('Current gasEstimate value:', gasEstimate)
             const uiGasEstimate = gasEstimate.match(/\d+/)
-            if (uiGasEstimate) {
-              const baseGas = BigInt(uiGasEstimate[0])
-              const gasWithBuffer = (baseGas * BigInt(130)) / BigInt(100) // Add 30% buffer
-              txOptions.gasLimit = gasWithBuffer
-              console.log('Using UI gas estimate with 30% buffer:', gasWithBuffer.toString())
+            if (uiGasEstimate && uiGasEstimate[0]) {
+              try {
+                const baseGas = BigInt(uiGasEstimate[0])
+                const gasWithBuffer = (baseGas * BigInt(150)) / BigInt(100) // Add 50% buffer for safety
+                txOptions.gasLimit = gasWithBuffer
+                console.log('Using UI gas estimate with 50% buffer:', gasWithBuffer.toString())
+              } catch (parseError) {
+                console.error('Failed to parse UI gas estimate:', parseError)
+                const defaultGasLimit = BigInt(500000) * BigInt(importData.length)
+                txOptions.gasLimit = defaultGasLimit
+                console.log('Using default gas limit due to parse error:', defaultGasLimit.toString())
+              }
             } else {
-              console.log('No UI gas estimate available, using default gas handling')
+              // Set a reasonable default gas limit for batch operations
+              const defaultGasLimit = BigInt(500000) * BigInt(importData.length) // 500k gas per NFT
+              txOptions.gasLimit = defaultGasLimit
+              console.log('No UI gas estimate available, using default gas limit:', defaultGasLimit.toString())
             }
+          }
+          
+          // Ensure we always have a gas limit set
+          if (!txOptions.gasLimit) {
+            const emergencyGasLimit = BigInt(1000000) * BigInt(importData.length) // 1M gas per NFT as emergency fallback
+            txOptions.gasLimit = emergencyGasLimit
+            console.log('Emergency gas limit set:', emergencyGasLimit.toString())
           }
           
           // Try batch import
@@ -1151,18 +1169,30 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           
           console.log('🚀 Executing batch import transaction...')
           
-          // Try to estimate gas first
+          // Try to estimate gas first and use it if no custom limit is set
           try {
-            const gasEstimate = await contract.importBatchWithTBA.estimateGas(
+            const gasEstimateResult = await contract.importBatchWithTBA.estimateGas(
               targetNFTContract,
               importData,
               hasTBANFTs ? tbaRegistry : ethers.ZeroAddress,
               hasTBANFTs ? tbaImplementation : ethers.ZeroAddress
             )
-            console.log('Gas estimate successful:', gasEstimate.toString())
+            console.log('Gas estimate successful:', gasEstimateResult.toString())
+            
+            // If no custom gas limit was set, use the estimated gas with buffer
+            if (!customGasLimit && !txOptions.gasLimit) {
+              const gasWithBuffer = (gasEstimateResult * BigInt(130)) / BigInt(100) // Add 30% buffer
+              txOptions.gasLimit = gasWithBuffer
+              console.log('Using estimated gas with 30% buffer:', gasWithBuffer.toString())
+            }
           } catch (gasError) {
             console.error('Gas estimation failed:', gasError)
-            throw new Error(`Gas estimation failed: ${gasError.message}`)
+            // If gas estimation fails but no gas limit is set, use a reasonable default
+            if (!customGasLimit && !txOptions.gasLimit) {
+              const fallbackGasLimit = BigInt(500000) * BigInt(importData.length) // 500k gas per NFT as fallback
+              txOptions.gasLimit = fallbackGasLimit
+              console.log('Using fallback gas limit:', fallbackGasLimit.toString())
+            }
           }
           
           const tx = await contract.importBatchWithTBA(
