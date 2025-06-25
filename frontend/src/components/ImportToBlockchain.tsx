@@ -297,6 +297,43 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
     }
   }
 
+  // Function to update import status for all NFTs
+  const updateImportStatus = async () => {
+    if (!importerContractAddress || !targetNFTContract || !currentAccount || nftsWithImportStatus.length === 0) {
+      console.log('Cannot update import status - missing requirements')
+      return
+    }
+    
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      const contract = new ethers.Contract(importerContractAddress, JSON_DATA_IMPORTER_ABI, provider)
+      
+      const updatedNFTs = await Promise.all(
+        nftsWithImportStatus.map(async (nft) => {
+          try {
+            const validation = await contract.validateImportData(
+              targetNFTContract,
+              nft.tokenURI || '',
+              nft.owner || currentAccount,
+              nft.creator || currentAccount,
+              nft.isSBT,
+              nft.originalTokenInfo,
+              10
+            )
+            return { ...nft, isAlreadyImported: !validation[0] && validation[1].includes('already') }
+          } catch {
+            return { ...nft, isAlreadyImported: false }
+          }
+        })
+      )
+      
+      setNftsWithImportStatus(updatedNFTs)
+      console.log('Import status updated after import completion')
+    } catch (error) {
+      console.warn('Could not update import status:', error)
+    }
+  }
+
   // Fetch metadata from tokenURI
   const fetchMetadata = async (tokenURI: string): Promise<{ name?: string; image?: string }> => {
     if (!tokenURI) return {}
@@ -1219,6 +1256,9 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           
           console.log(`✅ Successfully imported ${selectedNFTsList.length} NFTs in batch`)
           
+          // Update import status for successfully imported NFTs
+          await updateImportStatus()
+          
         } catch (batchError) {
           console.error('Batch import failed:', batchError)
           
@@ -1246,6 +1286,10 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
       // Complete the import process
       setImportResults(results)
       onImportComplete(results)
+      
+      // Update import status to reflect newly imported NFTs
+      await updateImportStatus()
+      
       setIsImporting(false)
     } catch (error) {
       console.error('Import failed:', error)
