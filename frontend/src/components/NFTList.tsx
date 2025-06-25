@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { NFTMetadata, NFTOwnershipInfo } from '../utils/contracts'
 import type { ChainConfig } from '../utils/chainConfigs'
-import { getNFTOwnershipInfo, isTBA, isSBT, getTBASourceToken } from '../utils/contracts'
+import { getNFTOwnershipInfo, isTBA, isSBT, getTBASourceToken, getTBASourceTokenOwner } from '../utils/contracts'
 
 interface NFTItem {
   tokenId: number
@@ -26,8 +26,10 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
   const [tbaCache, setTbaCache] = useState<Map<string, boolean>>(new Map())
   const [sbtCache, setSbtCache] = useState<Map<number, boolean>>(new Map())
   const [tbaSourceCache, setTbaSourceCache] = useState<Map<string, string | null>>(new Map())
+  const [tbaSourceOwnerCache, setTbaSourceOwnerCache] = useState<Map<string, string | null>>(new Map())
   const [exportedJson, setExportedJson] = useState<string | null>(null)
   const [allSBT, setAllSBT] = useState(false)
+  const [allCreatorTbaOwner, setAllCreatorTbaOwner] = useState(false)
 
   const handleImageError = (tokenId: number) => {
     setImageErrors(prev => new Set(prev).add(tokenId))
@@ -61,6 +63,17 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
               try {
                 const sourceToken = await getTBASourceToken(ownershipInfo.owner, selectedChain)
                 setTbaSourceCache(prev => new Map(prev).set(ownershipInfo.owner, sourceToken))
+                
+                // If we got a source token, also fetch its owner
+                if (sourceToken) {
+                  try {
+                    const sourceOwner = await getTBASourceTokenOwner(sourceToken, selectedChain)
+                    setTbaSourceOwnerCache(prev => new Map(prev).set(sourceToken, sourceOwner))
+                  } catch (error) {
+                    console.warn(`Failed to get TBA source token owner for ${sourceToken}:`, error)
+                    setTbaSourceOwnerCache(prev => new Map(prev).set(sourceToken, null))
+                  }
+                }
               } catch (error) {
                 console.warn(`Failed to get TBA source token for ${ownershipInfo.owner}:`, error)
                 setTbaSourceCache(prev => new Map(prev).set(ownershipInfo.owner, null))
@@ -125,12 +138,13 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
       const ownershipInfo = getOwnershipInfo(nft)
       const isOwnerTBA = ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false
       const tbaSourceToken = isOwnerTBA && ownershipInfo?.owner ? tbaSourceCache.get(ownershipInfo.owner) || null : null
+      const tbaSourceOwner = tbaSourceToken ? tbaSourceOwnerCache.get(tbaSourceToken) || null : null
       
       return {
         tokenId: nft.tokenId,
         tokenURI: nft.tokenURI || null,
         owner: ownershipInfo?.owner || null,
-        creator: ownershipInfo?.creator || null,
+        creator: allCreatorTbaOwner && tbaSourceOwner ? tbaSourceOwner : (ownershipInfo?.creator || null),
         isTBA: isOwnerTBA,
         isSBT: allSBT ? true : (sbtCache.get(nft.tokenId) || false),
         tbaSourceToken: tbaSourceToken,
@@ -231,6 +245,42 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
                   }}
                 />
                 all SBT
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
+                <input
+                  type="checkbox"
+                  checked={allCreatorTbaOwner}
+                  onChange={(e) => {
+                    setAllCreatorTbaOwner(e.target.checked)
+                    // Re-generate JSON when checkbox changes
+                    if (exportedJson) {
+                      const newAllCreatorTbaOwner = e.target.checked
+                      const exportData = nfts.map(nft => {
+                        const ownershipInfo = getOwnershipInfo(nft)
+                        const isOwnerTBA = ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false
+                        const tbaSourceToken = isOwnerTBA && ownershipInfo?.owner ? tbaSourceCache.get(ownershipInfo.owner) || null : null
+                        const tbaSourceOwner = tbaSourceToken ? tbaSourceOwnerCache.get(tbaSourceToken) || null : null
+                        
+                        return {
+                          tokenId: nft.tokenId,
+                          tokenURI: nft.tokenURI || null,
+                          owner: ownershipInfo?.owner || null,
+                          creator: newAllCreatorTbaOwner && tbaSourceOwner ? tbaSourceOwner : (ownershipInfo?.creator || null),
+                          isTBA: isOwnerTBA,
+                          isSBT: allSBT ? true : (sbtCache.get(nft.tokenId) || false),
+                          tbaSourceToken: tbaSourceToken,
+                          contractAddress: contractAddress,
+                          chainId: selectedChain?.chainId,
+                          originalTokenInfo: `${contractAddress}/${nft.tokenId}`,
+                          error: nft.error
+                        }
+                      })
+                      const jsonString = JSON.stringify(exportData, null, 2)
+                      setExportedJson(jsonString)
+                    }
+                  }}
+                />
+                all creator TbaOwner
               </label>
             </div>
             <button
@@ -460,9 +510,16 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
                             <div>Creator: {formatAddress(ownershipInfo.creator)}</div>
                           )}
                           {ownerIsTBA && tbaSourceCache.get(ownershipInfo.owner) && (
-                            <div style={{ color: '#17a2b8', fontSize: '0.7rem' }}>
-                              TBA Source: {formatAddress(tbaSourceCache.get(ownershipInfo.owner)!.split('/')[0])}/#{tbaSourceCache.get(ownershipInfo.owner)!.split('/')[1]}
-                            </div>
+                            <>
+                              <div style={{ color: '#17a2b8', fontSize: '0.7rem' }}>
+                                TBA Source: {formatAddress(tbaSourceCache.get(ownershipInfo.owner)!.split('/')[0])}/#{tbaSourceCache.get(ownershipInfo.owner)!.split('/')[1]}
+                              </div>
+                              {tbaSourceOwnerCache.get(tbaSourceCache.get(ownershipInfo.owner)!) && (
+                                <div style={{ color: '#17a2b8', fontSize: '0.65rem', marginLeft: '1rem' }}>
+                                  Owner: {formatAddress(tbaSourceOwnerCache.get(tbaSourceCache.get(ownershipInfo.owner)!)!)}
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       )

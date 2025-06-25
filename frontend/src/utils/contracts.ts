@@ -539,6 +539,34 @@ export const getTBASourceToken = async (
   }
 }
 
+export const getTBASourceTokenOwner = async (
+  tbaSourceToken: string,
+  chainConfig: ChainConfig
+): Promise<string | null> => {
+  try {
+    // Parse the TBA source token format: contractAddress/tokenId
+    const [contractAddress, tokenIdStr] = tbaSourceToken.split('/')
+    
+    if (!contractAddress || !tokenIdStr) {
+      console.warn('Invalid TBA source token format:', tbaSourceToken)
+      return null
+    }
+    
+    const tokenId = parseInt(tokenIdStr)
+    if (isNaN(tokenId)) {
+      console.warn('Invalid token ID in TBA source token:', tokenIdStr)
+      return null
+    }
+    
+    // Get the owner of the source NFT
+    const owner = await getNFTOwner(contractAddress, tokenId, chainConfig)
+    return owner
+  } catch (error) {
+    console.warn('Failed to get TBA source token owner:', error)
+    return null
+  }
+}
+
 export interface NFTOwnershipInfo {
   owner: string
   creator: string | null

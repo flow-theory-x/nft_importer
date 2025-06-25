@@ -43,6 +43,148 @@ const JSON_DATA_IMPORTER_ABI = [
   'function getImportStats(address importer) external view returns (tuple(uint256 totalImported, uint256 totalFailed, uint256 lastImportTime))'
 ]
 
+// DonatableNFT contract ABI for TBA source checking
+const DONATABLE_NFT_ABI = [
+  {
+    "inputs": [],
+    "name": "totalSupply",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "_originalTokenInfo",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ownerOf",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
+
+// TBA Registry ABI - correct version from nftstore
+const TBA_REGISTRY_ABI = [
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "implementation",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "tokenContract",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "salt",
+        "type": "uint256"
+      }
+    ],
+    "name": "account",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "implementation",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "tokenContract",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "salt",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "initData",
+        "type": "bytes"
+      }
+    ],
+    "name": "createAccount",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]
+
 const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
   importedNFTs,
   selectedChain,
@@ -89,6 +231,113 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
       } catch (error) {
         console.error('Failed to check wallet connection:', error)
       }
+    }
+  }
+
+  // Check if TBA source token exists in target contract
+  const checkTBASourceToken = async (tbaSourceToken: string) => {
+    if (!tbaSourceToken) return null
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      const nftContract = new ethers.Contract(targetNFTContract, DONATABLE_NFT_ABI, provider)
+      
+      const totalSupply = await nftContract.totalSupply()
+      console.log(`🔍 Checking TBA source token: "${tbaSourceToken}"`)
+      console.log(`📊 Total supply in target contract: ${totalSupply}`)
+      
+      // Convert to hex for detailed comparison
+      const tbaSourceTokenHex = ethers.hexlify(ethers.toUtf8Bytes(tbaSourceToken))
+      console.log(`🔍 TBA source token hex: ${tbaSourceTokenHex}`)
+      
+      for (let i = 1; i <= totalSupply; i++) {
+        try {
+          const originalTokenInfo = await nftContract._originalTokenInfo(i)
+          const originalTokenInfoHex = ethers.hexlify(ethers.toUtf8Bytes(originalTokenInfo))
+          
+          console.log(`Token ${i} _originalTokenInfo: "${originalTokenInfo}"`)
+          console.log(`Token ${i} _originalTokenInfo hex: ${originalTokenInfoHex}`)
+          console.log(`Token ${i} exact match: ${originalTokenInfo === tbaSourceToken}`)
+          console.log(`Token ${i} hex match: ${originalTokenInfoHex === tbaSourceTokenHex}`)
+          
+          if (originalTokenInfo === tbaSourceToken) {
+            console.log(`✅ Found TBA source token at DonatableNFT token ID ${i}`)
+            
+            // Get token owner for additional info
+            try {
+              const owner = await nftContract.ownerOf(i)
+              console.log(`Token ${i} owner: ${owner}`)
+            } catch (ownerError) {
+              console.log(`Could not get owner for token ${i}:`, ownerError)
+            }
+            
+            return i
+          }
+        } catch (error) {
+          console.log(`❌ Error reading token ${i}:`, error)
+        }
+      }
+      
+      console.log(`❌ TBA source token not found: ${tbaSourceToken}`)
+      return null
+    } catch (error) {
+      console.error('Error checking TBA source token:', error)
+      return null
+    }
+  }
+
+  // Test TBA registry and implementation
+  const testTBAComponents = async (sourceTokenId: number) => {
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      
+      const chainId = await provider.getNetwork().then(network => network.chainId)
+      console.log(`🔗 Chain ID: ${chainId}`)
+      
+      // First check if TBA registry contract exists
+      const registryCode = await provider.getCode(tbaRegistry)
+      console.log(`🔍 TBA Registry code exists: ${registryCode !== '0x'}`)
+      console.log(`📍 TBA Registry address: ${tbaRegistry}`)
+      
+      if (registryCode === '0x') {
+        throw new Error(`TBA Registry contract not found at address ${tbaRegistry}`)
+      }
+      
+      // Check if TBA implementation exists
+      const implementationCode = await provider.getCode(tbaImplementation)
+      console.log(`🔍 TBA Implementation code exists: ${implementationCode !== '0x'}`)
+      console.log(`📍 TBA Implementation address: ${tbaImplementation}`)
+      
+      if (implementationCode === '0x') {
+        throw new Error(`TBA Implementation contract not found at address ${tbaImplementation}`)
+      }
+      
+      const registryContract = new ethers.Contract(tbaRegistry, TBA_REGISTRY_ABI, provider)
+      
+      // Test TBA account calculation
+      try {
+        const tbaAccount = await registryContract.account(
+          tbaImplementation,
+          chainId,
+          targetNFTContract,
+          sourceTokenId.toString(), // convert to string like in tbaService
+          "1" // salt as string like in tbaService
+        )
+        console.log(`🏦 Calculated TBA account for token ${sourceTokenId}: ${tbaAccount}`)
+        
+        // Check if account already exists by checking code
+        const code = await provider.getCode(tbaAccount)
+        const accountExists = code !== '0x'
+        console.log(`🏦 TBA account exists: ${accountExists}`)
+        
+        return { tbaAccount, accountExists }
+      } catch (accountError) {
+        console.error('❌ Error calculating TBA account:', accountError)
+        throw accountError
+      }
+    } catch (error) {
+      console.error('❌ Error testing TBA components:', error)
+      throw error
     }
   }
 
@@ -365,6 +614,14 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           setGasEstimate(gasEstimate.toString())
         } else {
           console.log('Using TBA import (parent NFT validation passed)')
+          
+          // Test TBA components for gas estimation
+          const sourceTokenId = await checkTBASourceToken(nft.tbaSourceToken)
+          if (sourceTokenId !== null) {
+            console.log('🧪 Testing TBA components for gas estimation...')
+            await testTBAComponents(sourceTokenId)
+          }
+          
           const gasEstimate = await contract.importSingleTokenWithTBA.estimateGas(
             targetNFTContract,
             nft.tokenURI || '',
@@ -615,7 +872,19 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
               txOptions
             )
           } else {
-            console.log('Executing TBA import')
+            // TBA import - check source token first
+            console.log('🔍 Pre-checking TBA source token for:', nft.originalTokenInfo)
+            const sourceTokenId = await checkTBASourceToken(nft.tbaSourceToken)
+            
+            if (sourceTokenId === null) {
+              throw new Error(`TBA source token not found in target contract: ${nft.tbaSourceToken}`)
+            }
+            
+            // Test TBA components
+            console.log('🧪 Testing TBA registry and implementation...')
+            const tbaInfo = await testTBAComponents(sourceTokenId)
+            
+            console.log('✅ TBA source token verified, executing TBA import')
             tx = await contract.importSingleTokenWithTBA(
               targetNFTContract,
               nft.tokenURI || '',
@@ -697,6 +966,25 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           
           // Check if any NFT has TBA source token
           const hasTBANFTs = selectedNFTsList.some(nft => nft.tbaSourceToken)
+          
+          // Pre-check all TBA source tokens
+          if (hasTBANFTs) {
+            console.log('🔍 Pre-checking TBA source tokens for batch import...')
+            
+            for (const nft of selectedNFTsList) {
+              if (nft.tbaSourceToken) {
+                const sourceTokenId = await checkTBASourceToken(nft.tbaSourceToken)
+                
+                if (sourceTokenId === null) {
+                  throw new Error(`TBA source token not found in target contract: ${nft.tbaSourceToken} for NFT: ${nft.originalTokenInfo}`)
+                }
+                
+                console.log(`✅ TBA source token verified for ${nft.originalTokenInfo}: ${nft.tbaSourceToken} -> ID ${sourceTokenId}`)
+              }
+            }
+            
+            console.log('✅ All TBA source tokens verified for batch import')
+          }
           
           // Prepare batch import data
           const importData = selectedNFTsList.map(nft => [
