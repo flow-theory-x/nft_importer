@@ -123,32 +123,69 @@ contract JSONDataImporter {
         string memory tbaSourceToken,
         address registry,
         address implementation
-    ) external payable returns (uint256) {
+    ) public payable returns (uint256) {
+        // Validate basic parameters
+        _validateImportParameters(targetNFT, tokenURI, to, creator, royaltyRate, originalTokenInfo);
+        
+        // Determine mint destination (to or TBA)
+        address mintTo = _determineMintDestination(
+            to, 
+            tbaSourceToken, 
+            registry, 
+            implementation, 
+            targetNFT
+        );
+        
+        // Execute the mint
+        return _executeMint(targetNFT, mintTo, tokenURI, royaltyRate, isSBT, creator, originalTokenInfo);
+    }
+    
+    function _validateImportParameters(
+        address targetNFT,
+        string memory tokenURI,
+        address to,
+        address creator,
+        uint16 royaltyRate,
+        string memory originalTokenInfo
+    ) private view {
         require(targetNFT != address(0), "Invalid target NFT address");
         require(bytes(tokenURI).length > 0, "Token URI cannot be empty");
         require(to != address(0), "Invalid recipient address");
         require(creator != address(0), "Invalid creator address");
         require(royaltyRate <= 100, "Royalty rate cannot exceed 100%");
         require(!importedTokens[originalTokenInfo], "Token already imported");
-        
-        // Validate that the original token info is not already in the target NFT
         require(!_isTokenAlreadyImported(targetNFT, originalTokenInfo), "Original token already exists in target NFT");
-        
-        address mintTo = to;
-        
-        // Handle TBA logic if tbaSourceToken is provided
-        if (bytes(tbaSourceToken).length > 0) {
-            require(registry != address(0), "Registry address required for TBA");
-            require(implementation != address(0), "Implementation address required for TBA");
-            
-            // Check if originalTokenInfo matches any existing tbaSourceToken
-            uint256 sourceTokenId = _findTokenByTBASource(targetNFT, tbaSourceToken);
-            require(sourceTokenId > 0, "TBA source token not found in target NFT");
-            
-            // Create TBA for the source token
-            mintTo = _createTBA(registry, implementation, targetNFT, sourceTokenId);
+    }
+    
+    function _determineMintDestination(
+        address to,
+        string memory tbaSourceToken,
+        address registry,
+        address implementation,
+        address targetNFT
+    ) private returns (address) {
+        if (bytes(tbaSourceToken).length == 0) {
+            return to;
         }
         
+        require(registry != address(0), "Registry address required for TBA");
+        require(implementation != address(0), "Implementation address required for TBA");
+        
+        uint256 sourceTokenId = _findTokenByTBASource(targetNFT, tbaSourceToken);
+        require(sourceTokenId > 0, "TBA source token not found in target NFT");
+        
+        return _createTBA(registry, implementation, targetNFT, sourceTokenId);
+    }
+    
+    function _executeMint(
+        address targetNFT,
+        address mintTo,
+        string memory tokenURI,
+        uint16 royaltyRate,
+        bool isSBT,
+        address creator,
+        string memory originalTokenInfo
+    ) private returns (uint256) {
         IDonatableNFT donatableNFT = IDonatableNFT(targetNFT);
         
         try donatableNFT.mintImported(
@@ -159,15 +196,10 @@ contract JSONDataImporter {
             creator,
             originalTokenInfo
         ) returns (uint256 newTokenId) {
-            // Mark as imported
             importedTokens[originalTokenInfo] = true;
-            
-            // Update stats
             importerStats[msg.sender].totalImported++;
             importerStats[msg.sender].lastImportTime = block.timestamp;
-            
             emit JSONDataImported(msg.sender, targetNFT, newTokenId, originalTokenInfo);
-            
             return newTokenId;
         } catch Error(string memory reason) {
             importerStats[msg.sender].totalFailed++;
@@ -277,6 +309,15 @@ contract JSONDataImporter {
         
         emit BatchImportStarted(msg.sender, targetNFT, imports.length);
         
+        return _processBatchImport(targetNFT, imports, registry, implementation);
+    }
+    
+    function _processBatchImport(
+        address targetNFT,
+        ImportData[] memory imports,
+        address registry,
+        address implementation
+    ) private returns (uint256[] memory) {
         uint256[] memory newTokenIds = new uint256[](imports.length);
         uint256 successCount = 0;
         uint256 failureCount = 0;
@@ -297,14 +338,13 @@ contract JSONDataImporter {
                 newTokenIds[i] = newTokenId;
                 successCount++;
             } catch Error(string memory reason) {
-                newTokenIds[i] = 0; // Mark as failed
+                newTokenIds[i] = 0;
                 failureCount++;
                 emit ImportFailed(msg.sender, imports[i].originalTokenInfo, reason);
             }
         }
         
         emit BatchImportCompleted(msg.sender, targetNFT, successCount, failureCount);
-        
         return newTokenIds;
     }
 
@@ -317,7 +357,7 @@ contract JSONDataImporter {
         address targetNFT,
         ImportData[] memory imports
     ) external payable returns (uint256[] memory) {
-        return importBatchWithTBA(targetNFT, imports, address(0), address(0));
+        return this.importBatchWithTBA(targetNFT, imports, address(0), address(0));
     }
     
     /**
