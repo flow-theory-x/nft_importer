@@ -1535,7 +1535,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
       </div>
 
       {/* Gas Estimation */}
-      {walletConnected && importerContractAddress && targetNFTContract && selectedNFTs.size > 0 && (
+      {walletConnected && importerContractAddress && targetNFTContract && (
         <div className="gas-estimation" style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
             <button onClick={estimateGas} style={{ padding: '8px 16px' }}>
