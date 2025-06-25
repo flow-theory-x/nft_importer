@@ -17,9 +17,10 @@ interface NFTListProps {
   onTokenSelect?: (tokenId: number) => void
   contractAddress?: string
   selectedChain?: ChainConfig
+  contractName?: string
 }
 
-export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddress, selectedChain }: NFTListProps) {
+export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddress, selectedChain, contractName }: NFTListProps) {
   const [imageErrors, setImageErrors] = useState<Set<number>>(new Set())
   const [ownershipCache, setOwnershipCache] = useState<Map<number, NFTOwnershipInfo | null>>(new Map())
   const [loadingOwnership, setLoadingOwnership] = useState<Set<number>>(new Set())
@@ -119,7 +120,7 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
     if (!contractAddress || !selectedChain) return
 
     const nftsWithoutOwnership = nfts.filter(nft => 
-      nft.metadata && !nft.ownershipInfo && !ownershipCache.has(nft.tokenId) && !loadingOwnership.has(nft.tokenId)
+      nft.metadata && nft.tokenURI && !nft.ownershipInfo && !ownershipCache.has(nft.tokenId) && !loadingOwnership.has(nft.tokenId)
     )
 
     // Fetch ownership info for a few NFTs at a time to avoid overwhelming the API
@@ -133,8 +134,11 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
     return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgNTBMMTMwIDEwMEwxMDAgMTUwTDcwIDEwMEwxMDAgNTBaIiBmaWxsPSIjOUI5QkEwIi8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTcwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOUI5QkEwIiBmb250LXNpemU9IjEyIj5ObyBJbWFnZTwvdGV4dD4KPC9zdmc+Cg=='
   }
 
+  const validNfts = nfts.filter(nft => !nft.error || !nft.error.includes('invalid token ID'))
+  const invalidNfts = nfts.filter(nft => nft.error && nft.error.includes('invalid token ID'))
+
   const handleExportJson = () => {
-    const exportData = nfts.map(nft => {
+    const exportData = nfts.filter(nft => nft.tokenURI && (!nft.error || !nft.error.includes('invalid token ID'))).map(nft => {
       const ownershipInfo = getOwnershipInfo(nft)
       const isOwnerTBA = ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false
       const tbaSourceToken = isOwnerTBA && ownershipInfo?.owner ? tbaSourceCache.get(ownershipInfo.owner) || null : null
@@ -220,7 +224,7 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
                     // Re-generate JSON when checkbox changes
                     if (exportedJson) {
                       const newAllSBT = e.target.checked
-                      const exportData = nfts.map(nft => {
+                      const exportData = nfts.filter(nft => nft.tokenURI && (!nft.error || !nft.error.includes('invalid token ID'))).map(nft => {
                         const ownershipInfo = getOwnershipInfo(nft)
                         const isOwnerTBA = ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false
                         const tbaSourceToken = isOwnerTBA && ownershipInfo?.owner ? tbaSourceCache.get(ownershipInfo.owner) || null : null
@@ -255,7 +259,7 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
                     // Re-generate JSON when checkbox changes
                     if (exportedJson) {
                       const newAllCreatorTbaOwner = e.target.checked
-                      const exportData = nfts.map(nft => {
+                      const exportData = nfts.filter(nft => nft.tokenURI && (!nft.error || !nft.error.includes('invalid token ID'))).map(nft => {
                         const ownershipInfo = getOwnershipInfo(nft)
                         const isOwnerTBA = ownershipInfo?.owner ? tbaCache.get(ownershipInfo.owner) || false : false
                         const tbaSourceToken = isOwnerTBA && ownershipInfo?.owner ? tbaSourceCache.get(ownershipInfo.owner) || null : null
@@ -341,7 +345,14 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
                 const url = URL.createObjectURL(blob)
                 const a = document.createElement('a')
                 a.href = url
-                a.download = `nft-collection-${contractAddress}-${Date.now()}.json`
+                
+                // Get min and max token IDs from validNfts
+                const tokenIds = validNfts.map(nft => nft.tokenId)
+                const minId = Math.min(...tokenIds)
+                const maxId = Math.max(...tokenIds)
+                const contractNameForFile = (contractName || 'NFTCollection').replace(/\s+/g, '_')
+                
+                a.download = `${contractNameForFile}_${minId}-${maxId}.json`
                 document.body.appendChild(a)
                 a.click()
                 document.body.removeChild(a)
@@ -365,7 +376,9 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
 
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2 className="subtitle" style={{ margin: 0 }}>NFT Collection ({nfts.length} items)</h2>
+          <h2 className="subtitle" style={{ margin: 0 }}>
+            NFT Collection ({validNfts.length} items{invalidNfts.length > 0 && `, ${invalidNfts.length} invalid`})
+          </h2>
           {nfts.length > 0 && (
             <button
               onClick={handleExportJson}
@@ -402,7 +415,7 @@ export default function NFTList({ nfts, isLoading, onTokenSelect, contractAddres
           gap: '1rem',
           marginTop: '1rem'
         }}>
-          {nfts.map((nft) => (
+          {validNfts.map((nft) => (
             <div
               key={nft.tokenId}
               style={{

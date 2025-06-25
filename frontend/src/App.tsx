@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { connectToNFTContract, getNFTMetadata, getTotalSupply, getNFTMetadataBatch } from './utils/contracts'
+import { connectToNFTContract, getNFTMetadata, getTotalSupply, getNFTMetadataBatch, getLastId, getLastTokenId } from './utils/contracts'
 import type { ChainConfig } from './utils/chainConfigs'
 import type { NFTMetadata, NFTOwnershipInfo } from './utils/contracts'
 import { PRESET_CHAINS } from './utils/chainConfigs'
@@ -23,6 +23,8 @@ function App() {
   const [metadataError, setMetadataError] = useState('')
   
   const [totalSupply, setTotalSupply] = useState<number | null>(null)
+  const [lastId, setLastId] = useState<number | null>(null)
+  const [lastTokenId, setLastTokenId] = useState<number | null>(null)
   const [listMode, setListMode] = useState<'single' | 'list'>('single')
   const [nftList, setNftList] = useState<Array<{ tokenId: number; metadata: NFTMetadata | null; error?: string }>>([])
   const [listStatus, setListStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
@@ -43,19 +45,48 @@ function App() {
     setNftList([])
     setListStatus('idle')
     setTotalSupply(null)
+    setLastId(null)
+    setLastTokenId(null)
     
     try {
       const result = await connectToNFTContract(contractAddress, selectedChain)
       setContractInfo({ name: result.name, symbol: result.symbol })
       setConnectionStatus('success')
       
-      // Try to get total supply
+      // Try to get various supply/count values
+      let maxId = 0
+      
       try {
         const supply = await getTotalSupply(contractAddress, selectedChain)
         setTotalSupply(supply)
-        setRangeEnd(Math.min(20, supply).toString())
+        maxId = Math.max(maxId, supply)
       } catch {
         // totalSupply not supported, that's ok
+      }
+      
+      try {
+        const lastIdValue = await getLastId(contractAddress, selectedChain)
+        if (lastIdValue !== null) {
+          setLastId(lastIdValue)
+          maxId = Math.max(maxId, lastIdValue)
+        }
+      } catch {
+        // _lastId not supported, that's ok
+      }
+      
+      try {
+        const lastTokenIdValue = await getLastTokenId(contractAddress, selectedChain)
+        if (lastTokenIdValue !== null) {
+          setLastTokenId(lastTokenIdValue)
+          maxId = Math.max(maxId, lastTokenIdValue)
+        }
+      } catch {
+        // _lastTokenId not supported, that's ok
+      }
+      
+      // Set rangeEnd to the maximum found value
+      if (maxId > 0) {
+        setRangeEnd(maxId.toString())
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unknown error')
@@ -497,6 +528,8 @@ function App() {
             <p>Name: {contractInfo.name}</p>
             <p>Symbol: {contractInfo.symbol}</p>
             {totalSupply !== null && <p>Total Supply: {totalSupply.toLocaleString()}</p>}
+            {lastId !== null && <p>_lastId: {lastId.toLocaleString()}</p>}
+            {lastTokenId !== null && <p>_lastTokenId: {lastTokenId.toLocaleString()}</p>}
           </div>
         )}
         
@@ -627,6 +660,7 @@ function App() {
               onTokenSelect={handleTokenSelect}
               contractAddress={contractAddress}
               selectedChain={selectedChain}
+              contractName={contractInfo?.name}
             />
           )}
 

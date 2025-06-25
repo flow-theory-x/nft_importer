@@ -194,6 +194,48 @@ export const getTotalSupply = async (
   }
 }
 
+export const getLastId = async (
+  contractAddress: string,
+  chainConfig: ChainConfig
+): Promise<number | null> => {
+  if (!validateContractAddress(contractAddress)) {
+    throw new Error('Invalid contract address')
+  }
+
+  const provider = getProvider(chainConfig)
+  const abi = ['function _lastId() view returns (uint256)']
+  
+  try {
+    const contract = new ethers.Contract(contractAddress, abi, provider)
+    const lastId = await contract._lastId()
+    return parseInt(lastId.toString())
+  } catch (error) {
+    // _lastId not available
+    return null
+  }
+}
+
+export const getLastTokenId = async (
+  contractAddress: string,
+  chainConfig: ChainConfig
+): Promise<number | null> => {
+  if (!validateContractAddress(contractAddress)) {
+    throw new Error('Invalid contract address')
+  }
+
+  const provider = getProvider(chainConfig)
+  const abi = ['function _lastTokenId() view returns (uint256)']
+  
+  try {
+    const contract = new ethers.Contract(contractAddress, abi, provider)
+    const lastTokenId = await contract._lastTokenId()
+    return parseInt(lastTokenId.toString())
+  } catch (error) {
+    // _lastTokenId not available
+    return null
+  }
+}
+
 export const getNFTMetadataBatch = async (
   contractAddress: string,
   tokenIds: number[],
