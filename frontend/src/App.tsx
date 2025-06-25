@@ -649,6 +649,7 @@ function App() {
               <ImportToBlockchain
                 importedNFTs={importedNFTs}
                 selectedChain={selectedChain}
+                walletChainId={walletChainId}
                 onImportComplete={(results) => setImportResults(results)}
               />
               
