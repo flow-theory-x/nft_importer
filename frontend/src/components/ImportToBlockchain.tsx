@@ -48,6 +48,8 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
   const [gasEstimate, setGasEstimate] = useState<string>('')
   const [importerContractAddress, setImporterContractAddress] = useState('')
   const [targetNFTContract, setTargetNFTContract] = useState('')
+  const [tbaRegistry, setTbaRegistry] = useState('0x63c8A3536E4A647D48fC0076D442e3243f7e773b') // Default TBA registry
+  const [tbaImplementation, setTbaImplementation] = useState('0xa8a05744C04c7AD0D31Fcee368aC18040832F1c1') // Default TBA implementation
   const [walletConnected, setWalletConnected] = useState(false)
   const [currentAccount, setCurrentAccount] = useState<string>('')
   const [authorizationStatus, setAuthorizationStatus] = useState<string>('')
@@ -291,7 +293,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
             txOptions.gasLimit = parseInt(customGasLimit)
           }
           
-          const tx = await contract.importSingleToken(
+          const tx = await contract.importSingleTokenWithTBA(
             targetNFTContract,
             nft.tokenURI || '',
             nft.owner || currentAccount,
@@ -299,6 +301,9 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
             nft.isSBT,
             nft.originalTokenInfo,
             10,
+            nft.tbaSourceToken || '',
+            tbaRegistry,
+            tbaImplementation,
             txOptions
           )
           
@@ -341,14 +346,15 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
           }
         }
         
-        // Batch import
+        // Batch import with TBA support
         const importData = selectedNFTsList.map(nft => [
           nft.tokenURI || '',
           nft.owner || currentAccount,
           nft.creator || currentAccount,
           nft.isSBT || false,
           nft.originalTokenInfo,
-          10 // royaltyRate
+          10, // royaltyRate
+          nft.tbaSourceToken || '' // tbaSourceToken
         ])
 
         try {
@@ -357,7 +363,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
             txOptions.gasLimit = parseInt(customGasLimit)
           }
           
-          const tx = await contract.importBatch(targetNFTContract, importData, txOptions)
+          const tx = await contract.importBatchWithTBA(targetNFTContract, importData, tbaRegistry, tbaImplementation, txOptions)
           const receipt = await tx.wait()
           
           // For batch imports, we'll mark all as successful
@@ -434,6 +440,28 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
             value={targetNFTContract}
             onChange={(e) => setTargetNFTContract(e.target.value)}
             placeholder="0x..."
+            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+          />
+        </div>
+        
+        <div style={{ marginBottom: '10px' }}>
+          <label>TBA Registry Address:</label>
+          <input
+            type="text"
+            value={tbaRegistry}
+            onChange={(e) => setTbaRegistry(e.target.value)}
+            placeholder="0x63c8A3536E4A647D48fC0076D442e3243f7e773b"
+            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+          />
+        </div>
+        
+        <div style={{ marginBottom: '10px' }}>
+          <label>TBA Implementation Address:</label>
+          <input
+            type="text"
+            value={tbaImplementation}
+            onChange={(e) => setTbaImplementation(e.target.value)}
+            placeholder="0xa8a05744C04c7AD0D31Fcee368aC18040832F1c1"
             style={{ width: '100%', padding: '8px', marginTop: '5px' }}
           />
         </div>

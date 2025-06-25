@@ -403,7 +403,9 @@ export const isEOA = async (
 // JSONDataImporter contract utilities
 export const JSON_DATA_IMPORTER_ABI = [
   'function importSingleToken(address targetNFT, string memory tokenURI, address to, address creator, bool isSBT, string memory originalTokenInfo, uint16 royaltyRate) external payable returns (uint256)',
-  'function importBatch(address targetNFT, tuple(string tokenURI, address to, address creator, bool isSBT, string originalTokenInfo, uint16 royaltyRate)[] memory imports) external payable returns (uint256[])',
+  'function importSingleTokenWithTBA(address targetNFT, string memory tokenURI, address to, address creator, bool isSBT, string memory originalTokenInfo, uint16 royaltyRate, string memory tbaSourceToken, address registry, address implementation) external payable returns (uint256)',
+  'function importBatch(address targetNFT, tuple(string tokenURI, address to, address creator, bool isSBT, string originalTokenInfo, uint16 royaltyRate, string tbaSourceToken)[] memory imports) external payable returns (uint256[])',
+  'function importBatchWithTBA(address targetNFT, tuple(string tokenURI, address to, address creator, bool isSBT, string originalTokenInfo, uint16 royaltyRate, string tbaSourceToken)[] memory imports, address registry, address implementation) external payable returns (uint256[])',
   'function validateImportData(address targetNFT, string memory tokenURI, address to, address creator, bool isSBT, string memory originalTokenInfo, uint16 royaltyRate) external view returns (bool isValid, string memory reason)',
   'function isTokenImported(string memory originalTokenInfo) external view returns (bool)',
   'function getImportStats(address importer) external view returns (tuple(uint256 totalImported, uint256 totalFailed, uint256 lastImportTime))',
@@ -420,6 +422,7 @@ export interface ImportData {
   isSBT: boolean
   originalTokenInfo: string
   royaltyRate: number
+  tbaSourceToken: string
 }
 
 export const validateImportData = async (
