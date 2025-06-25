@@ -223,10 +223,47 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
     }
   }, [walletChainId])
 
-  // Initialize NFTs with import status
+  // Initialize NFTs with import status and validate
   useEffect(() => {
-    setNftsWithImportStatus(importedNFTs)
-  }, [importedNFTs])
+    const validateAllNFTs = async () => {
+      if (!importerContractAddress || !targetNFTContract || !currentAccount || importedNFTs.length === 0) {
+        setNftsWithImportStatus(importedNFTs)
+        return
+      }
+      
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum)
+        const contract = new ethers.Contract(importerContractAddress, JSON_DATA_IMPORTER_ABI, provider)
+        
+        const updatedNFTs = await Promise.all(
+          importedNFTs.map(async (nft) => {
+            try {
+              const validation = await contract.validateImportData(
+                targetNFTContract,
+                nft.tokenURI || '',
+                nft.owner || currentAccount,
+                nft.creator || currentAccount,
+                nft.isSBT,
+                nft.originalTokenInfo,
+                10
+              )
+              return { ...nft, isAlreadyImported: !validation[0] && validation[1].includes('already') }
+            } catch {
+              return { ...nft, isAlreadyImported: false }
+            }
+          })
+        )
+        
+        setNftsWithImportStatus(updatedNFTs)
+        console.log('Import status validated for all NFTs on load')
+      } catch (error) {
+        console.warn('Could not validate import status on load:', error)
+        setNftsWithImportStatus(importedNFTs)
+      }
+    }
+    
+    validateAllNFTs()
+  }, [importedNFTs, importerContractAddress, targetNFTContract, currentAccount])
 
   // Fetch metadata for all NFTs when they are imported
   useEffect(() => {
@@ -490,7 +527,7 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
       const updatedNFTs = await Promise.all(
         nftsWithImportStatus.map(async (nft) => {
           try {
-            const validation = await contractSigner.validateImportData(
+            const validation = await contract.validateImportData(
               targetNFTContract,
               nft.tokenURI || '',
               nft.owner || currentAccount,
@@ -1342,8 +1379,8 @@ const ImportToBlockchain: React.FC<ImportToBlockchainProps> = ({
                 marginBottom: '8px', 
                 padding: '8px', 
                 border: '1px solid #eee',
-                backgroundColor: isAlreadyImported ? '#e9ecef' : '#fff',
-                opacity: isAlreadyImported ? 0.8 : 1
+                backgroundColor: isAlreadyImported ? '#d6d8db' : '#fff',
+                opacity: isAlreadyImported ? 0.9 : 1
               }}>
                 <input
                   type="checkbox"
