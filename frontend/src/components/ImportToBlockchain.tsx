@@ -40,7 +40,7 @@ const JSON_DATA_IMPORTER_ABI = [
   'function importBatchWithTBA(address targetNFT, tuple(string tokenURI, address to, address creator, bool isSBT, string originalTokenInfo, uint16 royaltyRate, string tbaSourceToken)[] memory imports, address registry, address implementation) external payable returns (uint256[])',
   'function validateImportData(address targetNFT, string memory tokenURI, address to, address creator, bool isSBT, string memory originalTokenInfo, uint16 royaltyRate) external view returns (bool isValid, string memory reason)',
   'function validateBatch(address targetNFT, tuple(string tokenURI, address to, address creator, bool isSBT, string originalTokenInfo, uint16 royaltyRate, string tbaSourceToken)[] memory imports) external view returns (bool[] memory validResults, string[] memory reasons)',
-  'function isTokenImported(string memory originalTokenInfo) external view returns (bool)',
+  'function isTokenImported(address targetNFT, string memory originalTokenInfo) external view returns (bool)',
   'function getImportStats(address importer) external view returns (tuple(uint256 totalImported, uint256 totalFailed, uint256 lastImportTime))'
 ]
 

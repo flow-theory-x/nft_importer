@@ -271,8 +271,7 @@ contract JSONDataImporterV2 {
         require(to != address(0), "Invalid recipient address");
         require(creator != address(0), "Invalid creator address");
         require(royaltyRate <= 100, "Royalty rate cannot exceed 100%");
-        require(!importedTokens[originalTokenInfo], "Token already imported");
-        require(!_isTokenAlreadyImported(targetNFT, originalTokenInfo), "Original token already exists in target NFT");
+        require(!_isTokenAlreadyImported(targetNFT, originalTokenInfo), "Token already exists in target NFT");
     }
 
     function _determineMintDestination(
@@ -314,7 +313,7 @@ contract JSONDataImporterV2 {
             creator,
             originalTokenInfo
         ) returns (uint256 newTokenId) {
-            importedTokens[originalTokenInfo] = true;
+            // importedTokens[originalTokenInfo] = true; // Removed - rely on actual NFT existence
             importerStats[tx.origin].totalImported++; // Use tx.origin for batch imports
             importerStats[tx.origin].lastImportTime = block.timestamp;
             emit JSONDataImported(tx.origin, targetNFT, newTokenId, originalTokenInfo);
@@ -414,8 +413,8 @@ contract JSONDataImporterV2 {
     /**
      * @dev Check if a token has been imported
      */
-    function isTokenImported(string memory originalTokenInfo) external view returns (bool) {
-        return importedTokens[originalTokenInfo];
+    function isTokenImported(address targetNFT, string memory originalTokenInfo) external view returns (bool) {
+        return _isTokenAlreadyImported(targetNFT, originalTokenInfo);
     }
 
     /**
@@ -445,11 +444,8 @@ contract JSONDataImporterV2 {
         if (royaltyRate > 100) {
             return (false, "Royalty rate cannot exceed 100%");
         }
-        if (importedTokens[originalTokenInfo]) {
-            return (false, "Token already imported");
-        }
         if (_isTokenAlreadyImported(targetNFT, originalTokenInfo)) {
-            return (false, "Original token already exists in target NFT");
+            return (false, "Token already exists in target NFT");
         }
 
         return (true, "");
@@ -480,9 +476,10 @@ contract JSONDataImporterV2 {
 
     /**
      * @dev Emergency function to reset import status (owner only)
+     * @notice This function is deprecated as importedTokens mapping is no longer used
      */
     function resetImportStatus(string memory originalTokenInfo) external onlyOwner {
-        importedTokens[originalTokenInfo] = false;
+        // importedTokens[originalTokenInfo] = false; // Deprecated - no longer maintaining this mapping
     }
 
     /**
