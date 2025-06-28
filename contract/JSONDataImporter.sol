@@ -39,7 +39,7 @@ interface ITBA {
     function token() external view returns (uint256, address, uint256);
 }
 
-contract JSONDataImporterV2 {
+contract JSONDataImporterV3 {
     address public owner;
 
     // Events for tracking imports
